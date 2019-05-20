@@ -8,6 +8,11 @@ static const SPSchemaId SCHEMA_USERS = std::make_shared<SchemaId>("users");
 static const SPFieldDef FUSERNAME = FieldDef::alloc(TSTRING, "username", SCHEMA_USERS);
 static const SPFieldDef FUSERID = FieldDef::alloc(TUINT32, "userid", SCHEMA_USERS);
 
+struct RawData {
+  int id;
+  std::string name;
+};
+
 class MyUsersTable : public VirtualTable {
 public:
   MyUsersTable() {
@@ -27,25 +32,36 @@ public:
     };
     return def;
   }
+  
+  
 
   /**
    * query virtual table
    */
-  int query(SPQueryContext context, TableListener &listener) override {
-    DynMap row;
-    row[FUSERID] = 500;
-    row[FUSERNAME] = "bob";
-    TLStatus status = listener.onRow(context, row);
-    if (status == TL_STATUS_ABORT) return -1;
+  int prepare(SPQueryContext context) override {
+    // here you would gather:
+    //  - index constraints, such as userids requested
+    //  - check which columns are being requested
+    _data = {
+      { 500, "bob"}
+      ,{0, "root"}
+    };
 
-    row[FUSERID] = 0;
-    row[FUSERNAME] = "root";
-     status = listener.onRow(context, row);
-    if (status == TL_STATUS_ABORT) return -1;
+    return 0;
+  }
+  int next(DynMap &row, uint64_t rowId) override {
+    if (rowId < 0 || rowId >= _data.size()) {
+      return 1;
+    }
+
+    RawData &pData = _data[rowId];
+    row[FUSERID] = pData.id;
+    row[FUSERNAME] = pData.name;
 
     return 0;
   }
 private:
+  std::vector<RawData> _data;
 };
 
 SPVirtualTable newMyUsersTable() { return std::make_shared<MyUsersTable>(); }

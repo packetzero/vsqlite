@@ -55,18 +55,13 @@ struct Constraint {
 
 struct QueryContext {
   virtual std::vector<Constraint> getConstraints() = 0;
+  // TODO: requested columns
 };
 typedef std::shared_ptr<QueryContext> SPQueryContext;
 
 enum TLStatus {
   TL_STATUS_OK = 0,
   TL_STATUS_ABORT = 99
-};
-
-struct TableListener {
-  /**
-   */
-  virtual TLStatus onRow(SPQueryContext context, DynMap &row) = 0;
 };
 
 struct VirtualTable {
@@ -76,19 +71,11 @@ struct VirtualTable {
   /**
    * query virtual table
    */
-  virtual int query(SPQueryContext context, TableListener &listener) = 0;
+  virtual int prepare(SPQueryContext context/*, TableListener &listener*/) = 0;
+
+  virtual int next(DynMap &row, uint64_t rowId) = 0;
 };
 typedef std::shared_ptr<VirtualTable> SPVirtualTable;
-
-struct VSQLiteRegistry {
-  virtual int add(SPVirtualTable spVirtualTable) = 0;
-
-  virtual int remove(SPVirtualTable spVirtualTable) = 0;
-  virtual int remove(std::string tableName) = 0;
-};
-typedef std::shared_ptr<VSQLiteRegistry> SPVSQLiteRegistry;
-
-SPVSQLiteRegistry VSQLiteRegistryInstance();
 
 struct QueryListener {
   virtual int onResultRow(DynMap &row) = 0;
@@ -136,6 +123,11 @@ struct VSQLite {
   virtual bool add(SPAppFunction spFunction) = 0;
 
   virtual void remove(SPAppFunction spFunction) = 0;
+
+  virtual int add(SPVirtualTable spVirtualTable) = 0;
+
+  virtual void remove(SPVirtualTable spVirtualTable) = 0;
+
 };
 typedef std::shared_ptr<VSQLite> SPVSQLite;
 

@@ -3,17 +3,12 @@
 
 #include "example_table.h"
 
-struct DoublerFunction : public vsqlite::AppFunction {
-  
-  const std::string name() const override { return "dub"; }
-  
-  const std::vector<DynType> &expectedArgs() const override {
-    static std::vector<DynType> _argtypes = { TFLOAT64 };
-    return _argtypes;
-  }
-  
+
+struct Function_power : public vsqlite::AppFunctionBase {
+  Function_power() : vsqlite::AppFunctionBase("power", { TFLOAT64, TFLOAT64 }) {}
+
   DynVal func(const std::vector<DynVal> &args, std::string &errmsg) override {
-    return 2 * args[0].as_double();
+    return pow((double)args[0], (double)args[1]);
   }
 };
 
@@ -21,28 +16,28 @@ struct Function_sqrt : public vsqlite::AppFunctionBase {
   Function_sqrt() : vsqlite::AppFunctionBase("sqrt", { TFLOAT64 }) {}
   
   DynVal func(const std::vector<DynVal> &args, std::string &errmsg) override {
-    return sqrt(args[0].as_double());
+    return sqrt((double)args[0]);
   }
 };
 
 
 int main(int argc, char *argv[])
 {
-  vsqlite::SPVSQLiteRegistry registry = vsqlite::VSQLiteRegistryInstance();
-
-  int status = registry->add(newMyUsersTable());
-
   vsqlite::SPVSQLite vsqlite = vsqlite::VSQLiteInstance();
 
   vsqlite::SimpleQueryListener listener;
   
   std::vector<DynMap> results;
   
-  vsqlite->add(std::make_shared<DoublerFunction>());
+  vsqlite->add(std::make_shared<Function_power>());
   vsqlite->add(std::make_shared<Function_sqrt>());
 
-  status = vsqlite->query("SELECT 1 as num, dub(11) as dd, sqrt(64) as ocho, 'some string value' as description, 4.25 as score", listener); //results);
-//  status = vsqlite->query("SELECT * FROM users WHERE name like '%o%'", results);
+  int status = vsqlite->add(newMyUsersTable());
+  
+
+  
+//  status = vsqlite->query("SELECT 1 as num, power(8,2) as sixtyfour, sqrt(64) as ocho, 'some string value' as description, 4.25 as score", listener);
+  status = vsqlite->query("SELECT * FROM users WHERE username like '%o%'", listener);
 
   if (listener.results.empty()) {
     printf("ERROR: no results");
