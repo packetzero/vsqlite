@@ -3,9 +3,10 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.7)
 set (PROJECT_NAME vsqlite-tests)
 PROJECT(${PROJECT_NAME})
 
-file(GLOB HDRS "../*.h*" )
+file(GLOB HDRS "../include/vsqlite/*.h*" "*.h*")
 file(GLOB SRCS "*.cpp")
 
+include_directories(../include )
 include_directories(.. ${GTEST_DIR}/include )
 
 

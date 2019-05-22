@@ -89,8 +89,10 @@ struct VirtualTable {
 
   /**
    * Called for each row of data.
+   * The caller (vsqlite layer) will determine if next()
+   * provides data if returns 0 OR row.empty().
    * @param data Gets set when data is available (out param)
-   * @rowId incremental row number hint. If index used, will always be 0.
+   * @rowId incremental row number hint.
    * @returns 0 if data is available, 1 if no more data.
    */
   virtual int next(DynMap &row, uint64_t rowId) = 0;

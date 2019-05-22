@@ -142,6 +142,8 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
   int numRequiredColumns = 0;
   int numIndexedColumns = 0;
   int xFilterArgvIndex = 0;
+  pVT->_colsUsed.clear();
+  pVT->_constraints.clear();
 
   const TableDef & td = pVT->_implementation->getTableDef();
 
@@ -301,7 +303,10 @@ static int xNext(sqlite3_vtab_cursor* psvCur) {
   auto pVC = (my_vtab_cursor*)psvCur;
 
   pVC->_row.clear();
-  /*int status =*/ pVC->_pvt->_implementation->next(pVC->_row, pVC->_rowId++);
+  int status = pVC->_pvt->_implementation->next(pVC->_row, pVC->_rowId);
+  if (status == 0 && !pVC->_row.empty()) {
+    pVC->_rowId++;
+  }
 
   return SQLITE_OK;
 }
