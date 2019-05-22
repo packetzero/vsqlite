@@ -51,9 +51,6 @@ public:
    * once, then calls to next() until it returns 1;
    */
   int prepare(SPQueryContext context) override {
-    // here you would gather:
-    //  - index constraints, such as userids requested
-    //  - check which columns are being requested
 
     // reset state
 

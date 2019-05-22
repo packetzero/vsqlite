@@ -26,8 +26,6 @@ int main(int argc, char *argv[])
 
   vsqlite::SimpleQueryListener listener;
 
-  std::vector<DynMap> results;
-
   vsqlite->add(std::make_shared<Function_power>());
   vsqlite->add(std::make_shared<Function_sqrt>());
 
