@@ -1,5 +1,6 @@
 
 #include "vsqlite_impl.h"
+#include <set>
 
 namespace vsqlite {
 
@@ -10,14 +11,28 @@ namespace vsqlite {
     std::vector<Constraint> getConstraints() override {
       return _constraints;
     }
-    // TODO: requested columns
-  protected:
+    std::set<SPFieldDef> getRequestedColumns() override {
+      return _colsUsed;
+    }
+
     std::vector<Constraint> _constraints;
+    std::set<SPFieldDef> _colsUsed;
   };
 
+struct constraint_info_t {
+  SPFieldDef columnId;
+  int colIdx;
+  int termIdx;
+  unsigned char op;
+};
+
 struct my_vtab : public sqlite3_vtab {
-  my_vtab(VirtualTable *implementation) : sqlite3_vtab(), _implementation(implementation) {}
+  my_vtab(VirtualTable *implementation) : sqlite3_vtab(), _implementation(implementation), _colsUsed(), _constraints() {}
   VirtualTable *_implementation;
+
+  // following provided in xBestIndex
+  std::set<SPFieldDef> _colsUsed;
+  std::vector<constraint_info_t> _constraints;
 };
 
 struct my_vtab_cursor : public sqlite3_vtab_cursor {
@@ -74,12 +89,160 @@ static int xOpen(sqlite3_vtab* tab, sqlite3_vtab_cursor** ppCursor) {
 }
 
 //----------------------------------------------------------------------
+// get index of fieldId in columns
+//----------------------------------------------------------------------
+static int getIndexOfColumn(SPFieldDef fieldId, const TableDef &tableDef) {
+  // find the aliased column
+  for (int i=0; i < tableDef.columns.size();i++) {
+    if (tableDef.columns[i].id == fieldId) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+//----------------------------------------------------------------------
+// op
+//----------------------------------------------------------------------
+static inline std::string opString(unsigned char op) {
+  switch (op) {
+    case SQLITE_INDEX_CONSTRAINT_EQ:
+      return "=";
+    case SQLITE_INDEX_CONSTRAINT_GT:
+      return ">";
+    case SQLITE_INDEX_CONSTRAINT_LE:
+      return "<=";
+    case SQLITE_INDEX_CONSTRAINT_LT:
+      return "<";
+    case SQLITE_INDEX_CONSTRAINT_GE:
+      return ">=";
+    case SQLITE_INDEX_CONSTRAINT_LIKE:
+      return "LIKE";
+    case SQLITE_INDEX_CONSTRAINT_MATCH:
+      return "MATCH";
+    case SQLITE_INDEX_CONSTRAINT_GLOB:
+      return "GLOB";
+    case SQLITE_INDEX_CONSTRAINT_REGEXP:
+      return "REGEX";
+    default:
+      break;
+  }
+  return "?";
+}
+
+//----------------------------------------------------------------------
 // sqlite passes info on query, we respond by populating any
 // indexes that the virtual table will handle.
 //----------------------------------------------------------------------
 static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
-  // TODO
+  static int kConstraintIndexID = 1; // increments with each index used
+  my_vtab* pVT = (my_vtab*)tab;
+  int numRequiredConstraints = 0;
+  int numIndexedConstraints = 0;
+  int numRequiredColumns = 0;
+  int numIndexedColumns = 0;
+  int xFilterArgvIndex = 0;
+
+  static std::set<unsigned char> allowed_constraints = { SQLITE_INDEX_CONSTRAINT_EQ };
+
+  const TableDef & td = pVT->_implementation->getTableDef();
+
+  // gather constraints
+
+  if (pIdxInfo->nConstraint > 0) {
+    for (size_t i = 0; i < static_cast<size_t>(pIdxInfo->nConstraint); ++i) {
+      const sqlite3_index_info::sqlite3_index_constraint &constraint_info = pIdxInfo->aConstraint[i];
+
+      if (constraint_info.iColumn >= td.columns.size()) {
+        continue;
+      }
+      if (constraint_info.usable == 0) { continue; }
+
+      if (allowed_constraints.count(constraint_info.op) == 0) {
+        // TODO: look at table constraint flags
+        continue; // table does not support this constraint
+      }
+
+      // get column def, dealing with aliases
+
+      const ColumnDef *pcoldef = &td.columns[constraint_info.iColumn];
+      if (pcoldef->aliased) {
+        int j = getIndexOfColumn(pcoldef->aliased, td);
+        if (j < 0) {
+          // TODO: error
+          continue;
+        }
+        pcoldef = &td.columns[j];
+      }
+
+      // mark use
+
+      if (pcoldef->options & REQUIRED) {
+        numRequiredConstraints ++;
+      }
+      if (pcoldef->options & (INDEXED | ADDITIONAL)) {
+        numIndexedConstraints ++;
+      }
+
+      // save constraint
+
+      pIdxInfo->aConstraintUsage[i].argvIndex = ++xFilterArgvIndex;
+
+      pVT->_constraints.push_back({pcoldef->id, constraint_info.iColumn, constraint_info.iTermOffset, constraint_info.op});
+    }
+  }
+
+  // track columns requested, so vtables can optimize out work if needed
+
+  for (int i=0; i < td.columns.size(); i++) {
+    const ColumnDef *pcoldef = &td.columns[i];
+
+    // handle column aliases
+
+    if (pcoldef->aliased) {
+      int actualColIdx = getIndexOfColumn(pcoldef->aliased, td);
+      if (actualColIdx < 0) {
+        // TODO: log error
+        continue;
+      }
+      pcoldef = &td.columns[actualColIdx];
+    } else {
+
+      // only count these for non-aliased columns
+
+      if (pcoldef->options & (INDEXED | ADDITIONAL)) {
+        numIndexedColumns++;
+      }
+      if (pcoldef->options & (REQUIRED)) {
+        numRequiredColumns++;
+      }
+    }
+
+    // track columns used
+
+    if (pIdxInfo->colUsed & (1LL << i)) {
+
+      pVT->_colsUsed.insert(pcoldef->id);
+      //fprintf(stderr, "column used:'%s'\n", pcoldef->id->name.c_str());
+    }
+  }
+
+  if (numRequiredConstraints < numRequiredColumns) {
+    return SQLITE_CONSTRAINT;
+  }
+
+  pIdxInfo->idxNum = static_cast<int>(kConstraintIndexID++);
+
   return SQLITE_OK;
+}
+
+Constraint _makeConstraint(constraint_info_t &cinfo, sqlite3_value *val) {
+  Constraint c;
+  c.columnId = cinfo.columnId;
+  c.op = (ConstraintOp)cinfo.op;
+  getSqliteValue(val, c.value);
+
+  return c;
 }
 
 //----------------------------------------------------------------------
@@ -91,12 +254,33 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
                    int argc,
                    sqlite3_value** argv) {
   auto pVC = (my_vtab_cursor*)psvCur;
+  auto pVT = pVC->_pvt;
 
   auto spContext = std::make_shared<QueryContextImpl>();
 
-  /*int status =*/ pVC->_pvt->_implementation->prepare(spContext);
+  // add filter constraints to context
+
+  if (argc > 0 && !pVT->_constraints.empty()) {
+    if (argc > pVT->_constraints.size()) {
+      // not good
+    } else {
+      for (int i=0; i < argc; i++) {
+        spContext->_constraints.push_back(_makeConstraint(pVT->_constraints[i], argv[i]));
+      }
+    }
+  }
+
+  // add requested columns to context
+
+  for (auto id : pVT->_colsUsed) {
+    spContext->_colsUsed.insert(id);
+  }
+
+  // call vtable's prepare
   
-  // get first row, if there is one
+  /*int status =*/ pVC->_pvt->_implementation->prepare(spContext);
+
+  // get first row, if there is one.
 
   pVC->_row.clear();
   /*int status =*/ pVC->_pvt->_implementation->next(pVC->_row, pVC->_rowId++);
@@ -130,12 +314,24 @@ static int xColumn(sqlite3_vtab_cursor* psvCur, sqlite3_context* ctx, int col) {
   if (col < 0 || col >= tableDef.columns.size()) {
     return SQLITE_ERROR;
   }
-  
+
+  // handle column alias
+
+  if (tableDef.columns[col].aliased) {
+    int actualColIdx = getIndexOfColumn(tableDef.columns[col].aliased, tableDef);
+    if (actualColIdx < 0) {
+      sqlite3_result_error(ctx, "unable to find column alias", -1);
+      return SQLITE_ERROR;
+    }
+    col = actualColIdx;
+  }
+
   const ColumnDef &colDef = tableDef.columns[col];
-  
+
   auto fit = pVC->_row.find(colDef.id);
   if (fit == pVC->_row.end()) {
-    return SQLITE_ERROR;
+    sqlite3_result_null(ctx);
+    return SQLITE_OK;
   }
   DynVal &val = fit->second;
 
@@ -254,11 +450,14 @@ void VSQLiteImpl::remove(SPVirtualTable spVirtualTable) {
         return "UNSIGNED BIGINT";
       case TBYTES:
         return "BLOB";
+      case TNONE:
+        return "UNKNOWN"; // alias columns?
       case TSTRING:
       default:
         return "TEXT";
     }
   }
+
 
 std::string createStatement(const TableDef &td) {
   std::map<std::string, bool> epilog;
@@ -266,10 +465,13 @@ std::string createStatement(const TableDef &td) {
   std::vector<std::string> pkeys;
 
   std::string statement = "(";
-  for (size_t i = 0; i < td.columns.size(); ++i) {
+  int i = -1;
+  while (++i < (int)td.columns.size()) {
+    if (i > 0) { statement += ", "; }
+
     const auto& column = td.columns.at(i);
-    statement +=
-        '`' + column.id->name + "` " + columnTypeName(column.id->typeId);
+    statement += '`' + column.id->name + "` ";
+    statement += columnTypeName(column.id->typeId);
     auto& options = column.options;
     if (options & (ColOpt::INDEXED | ColOpt::ADDITIONAL)) {
       if (options & ColOpt::INDEXED) {
@@ -278,11 +480,8 @@ std::string createStatement(const TableDef &td) {
       pkeys.push_back(column.id->name);
       epilog["WITHOUT ROWID"] = true;
     }
-    if (options & ColOpt::HIDDEN) {
+    if (options & (ColOpt::HIDDEN | ColOpt::ALIAS )) {
       statement += " HIDDEN";
-    }
-    if (i < td.columns.size() - 1) {
-      statement += ", ";
     }
   }
 

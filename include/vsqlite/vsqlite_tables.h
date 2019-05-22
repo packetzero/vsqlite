@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <set>
 
 #include <dynobj.hpp>
 
@@ -18,44 +19,40 @@ enum ColOpt {
   ,REQUIRED   = (1 << 2)
   ,ADDITIONAL = (1 << 3)
   ,HIDDEN     = (1 << 4)
+  ,ALIAS      = (1 << 8)
 };
 
 struct ColumnDef {
   SPFieldDef id;
-  //std::string stype;
   uint32_t options;
-//  std::vector<std::string> options;
   std::string description;
-  /*
-  bool isIndexed() {
-    for (std::string &opt : options) {
-      if (opt == "INDEX") { return true; }
-      if (opt == "REQUIRED") { return true; }
-    }
-    return false;
-  }*/
-//  SPTableDef _spTableDef;
+  SPFieldDef aliased;
 };
 
 typedef std::shared_ptr<ColumnDef> SPColumnDef;
 
+/*
+ * no support for table aliases
+ */
 struct TableDef {
   SPSchemaId table_name;
-  std::vector<std::string> table_aliases;
   std::vector<ColumnDef> columns;
-  std::map<std::string,std::string> column_aliases;
   std::vector<std::string> table_attrs;  // CACHEABLE,EVENT
 };
 
+enum ConstraintOp {
+  OP_EQ = 2
+};
+  
 struct Constraint {
-  SPColumnDef columnDef;
-  std::string op;
-  std::string value;
+  SPFieldDef columnId;
+  ConstraintOp op;
+  DynVal value;
 };
 
 struct QueryContext {
   virtual std::vector<Constraint> getConstraints() = 0;
-  // TODO: requested columns
+  virtual std::set<SPFieldDef> getRequestedColumns() = 0;
 };
 typedef std::shared_ptr<QueryContext> SPQueryContext;
 
@@ -79,7 +76,7 @@ typedef std::shared_ptr<VirtualTable> SPVirtualTable;
 
 struct QueryListener {
   virtual int onResultRow(DynMap &row) = 0;
-  //virtual void onQueryError(const std::string &errmsg) = 0;
+  virtual void onQueryError(const std::string errmsg) = 0;
 };
 
 struct SimpleQueryListener : public QueryListener {
@@ -87,7 +84,9 @@ struct SimpleQueryListener : public QueryListener {
     results.push_back(row);
     return 0;
   }
+  void onQueryError(const std::string errmsg) override { errmsgs.push_back(errmsg); }
   std::vector<DynMap> results;
+  std::vector<std::string> errmsgs;
 };
 
 struct AppFunction {

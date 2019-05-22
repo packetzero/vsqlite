@@ -49,4 +49,7 @@ namespace vsqlite {
     std::vector<SPVirtualTable> _tables;
   };
 
+
+  void getSqliteValue(sqlite3_value *val, DynVal &dest);
+
 } // namespace

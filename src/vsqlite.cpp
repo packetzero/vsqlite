@@ -7,6 +7,7 @@ namespace vsqlite {
       sqlite3_stmt *pStmt = nullptr;
       int rv = sqlite3_prepare_v2(_db, sql.c_str(), sql.size(), &pStmt, nullptr);
       if (rv != SQLITE_OK) {
+        listener.onQueryError(sqlite3_errstr(rv));
         return -1;
       }
 
@@ -44,6 +45,29 @@ namespace vsqlite {
       return 0;
     }
 
+ void getSqliteValue(sqlite3_value *val, DynVal &dest) {
+
+   auto sqltype = sqlite3_value_type(val);
+   if (sqltype == SQLITE_NULL) {
+     return;
+   }
+   switch(sqltype) {
+     case SQLITE_INTEGER:
+       dest = sqlite3_value_int(val);
+       break;
+     case SQLITE_FLOAT:
+       dest = sqlite3_value_double(val);
+       break;
+     case SQLITE_TEXT:
+       dest = (const char *)(sqlite3_value_text(val));
+       break;
+     case SQLITE_BLOB:
+     default:
+       assert(false); // TODO
+       break;
+   }
+ }
+
   static void _funcWrapper(sqlite3_context* context,int argc,sqlite3_value** argv) {
     AppFunction* pFunc = (AppFunction*)sqlite3_user_data(context);
     if (nullptr == pFunc) {
@@ -61,11 +85,11 @@ namespace vsqlite {
 
     for (int i=0; i < argc; i++) {
       auto sqltype = sqlite3_value_type(argv[i]);
-      if (SQLITE_NULL == sqltype) {
-        argvals.push_back(DynVal());
-        continue;
-      }
+
       argvals.push_back(DynVal());
+
+      getSqliteValue(argv[i], argvals[i]);
+/*
       switch(sqltype) {
         case SQLITE_INTEGER:
           argvals[i] = sqlite3_value_int(argv[i]);
@@ -81,7 +105,7 @@ namespace vsqlite {
           assert(false); // TODO
           break;
       }
-
+*/
       // convert to expected type
 
       if (TNONE != argdefs[i] && argdefs[i] != argvals[i].type()) {
