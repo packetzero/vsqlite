@@ -3,11 +3,16 @@
 
 #include "test_table1.h"
 
+static uint32_t gCount = 0;
+static std::shared_ptr<T1Table> spTable;
+
 class IndexTest : public ::testing::Test {
 protected:
-  virtual void SetUp() {
-    if (nullptr == vsqlite) {
-      vsqlite = vsqlite::VSQLiteInstance();
+  virtual void SetUp() override {
+
+    vsqlite = vsqlite::VSQLiteInstance();
+
+    if (gCount++ == 0) {
       spTable = std::make_shared<T1Table>();
       int status = vsqlite->add(spTable);
       ASSERT_EQ(0, status);
@@ -15,9 +20,11 @@ protected:
       spTable->reset();
     }
   }
+  virtual void TearDown() override {
+    
+  }
 
   vsqlite::SPVSQLite vsqlite;
-  std::shared_ptr<T1Table> spTable;
   vsqlite::SimpleQueryListener listener;
 
 };

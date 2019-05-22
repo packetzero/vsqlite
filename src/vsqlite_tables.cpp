@@ -155,7 +155,7 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
         continue;
       }
       if (constraint_info.usable == 0) { continue; }
-      
+
       // get column def, dealing with aliases
 
       const ColumnDef *pcoldef = &td.columns[constraint_info.iColumn];
@@ -169,7 +169,7 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
       }
 
       // does vtable support the constraint?
-      
+
       if (pcoldef->indexOpsImplemented.empty()) {
         if (constraint_info.op != SQLITE_INDEX_CONSTRAINT_EQ) {
           continue;
@@ -180,7 +180,7 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
           continue;
         }
       }
-      
+
       // mark use
 
       if (pcoldef->options & REQUIRED) {
@@ -283,7 +283,7 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
   }
 
   // call vtable's prepare
-  
+
   /*int status =*/ pVC->_pvt->_implementation->prepare(spContext);
 
   // get first row, if there is one.
@@ -436,6 +436,18 @@ static sqlite3_module *getReadOnlyTableModule() {
 
 void VSQLiteImpl::remove(SPVirtualTable spVirtualTable) {
   // TODO:
+
+  auto format = "DROP TABLE IF EXISTS temp." + spVirtualTable->getTableDef().table_name->schemaName;
+  int rc = sqlite3_exec(_db, format.c_str(), nullptr, nullptr, 0);
+  if (rc != SQLITE_OK) {
+    //TODO: "Error detaching table: " << name << " (" << rc << ")";
+  }
+  for (auto it = _tables.begin(); it != _tables.end(); it++) {
+    if ((*it)->getTableDef().table_name == spVirtualTable->getTableDef().table_name) {
+      _tables.erase(it);
+      break;
+    }
+  }
 }
 
   static std::string columnTypeName(DynType t) {
