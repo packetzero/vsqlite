@@ -22,11 +22,26 @@ enum ColOpt {
   ,ALIAS      = (1 << 8)
 };
 
+// these must match SQLITE_INDEX_CONSTRAINT_EQ, etc.
+enum ConstraintOp {
+  OP_EQ = 2
+  ,OP_GT = 4
+  ,OP_LE = 8
+  ,OP_LT = 16
+  ,OP_GE = 32
+  ,OP_MATCH = 64
+  ,OP_LIKE = 65
+  ,OP_GLOB = 66
+  ,OP_REGEX = 67
+};
+
 struct ColumnDef {
   SPFieldDef id;
   uint32_t options;
   std::string description;
   SPFieldDef aliased;
+  // ops other than OP_EQ need to be added explicitly
+  std::set<ConstraintOp> indexOpsImplemented;
 };
 
 typedef std::shared_ptr<ColumnDef> SPColumnDef;
@@ -40,10 +55,6 @@ struct TableDef {
   std::vector<std::string> table_attrs;  // CACHEABLE,EVENT
 };
 
-enum ConstraintOp {
-  OP_EQ = 2
-};
-  
 struct Constraint {
   SPFieldDef columnId;
   ConstraintOp op;
@@ -61,28 +72,40 @@ enum TLStatus {
   TL_STATUS_ABORT = 99
 };
 
+
 struct VirtualTable {
 
   virtual const TableDef& getTableDef() const = 0;
 
   /**
-   * query virtual table
+   * If index is used, prepare will be called once for each value
+   * with the OP_EQ constraint.
+   * For example if 'WHERE userid IN (2,7,9,11)' then prepare() will
+   * be called 4 times.
+   * If there are no index constraints, prepare() will be called
+   * once, then calls to next() until it returns 1;
    */
-  virtual int prepare(SPQueryContext context/*, TableListener &listener*/) = 0;
+  virtual int prepare(SPQueryContext context) = 0;
 
+  /**
+   * Called for each row of data.
+   * @param data Gets set when data is available (out param)
+   * @rowId incremental row number hint. If index used, will always be 0.
+   * @returns 0 if data is available, 1 if no more data.
+   */
   virtual int next(DynMap &row, uint64_t rowId) = 0;
 };
 typedef std::shared_ptr<VirtualTable> SPVirtualTable;
 
 struct QueryListener {
-  virtual int onResultRow(DynMap &row) = 0;
+  virtual TLStatus onResultRow(DynMap &row) = 0;
   virtual void onQueryError(const std::string errmsg) = 0;
 };
 
 struct SimpleQueryListener : public QueryListener {
-  int onResultRow(DynMap &row) override {
+  TLStatus onResultRow(DynMap &row) override {
     results.push_back(row);
-    return 0;
+    return TL_STATUS_OK;
   }
   void onQueryError(const std::string errmsg) override { errmsgs.push_back(errmsg); }
   std::vector<DynMap> results;

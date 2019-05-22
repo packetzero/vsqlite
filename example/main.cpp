@@ -37,8 +37,10 @@ int main(int argc, char *argv[])
 
 //  status = vsqlite->query("SELECT 1 as num, power(8,2) as sixtyfour, sqrt(64) as ocho, 'some string value' as description, 4.25 as score", listener);
   //status = vsqlite->query("SELECT uid,username,userid FROM users WHERE username like '%o%'", listener);
-//  status = vsqlite->query("SELECT username,userid,home FROM users WHERE userid IN (501,0,520)", listener);
-  status = vsqlite->query("SELECT * FROM users", listener);
+  status = vsqlite->query("SELECT username,userid,home FROM users WHERE userid IN (501,0,520)", listener);
+//  status = vsqlite->query("SELECT * FROM users", listener);
+//  status = vsqlite->query("SELECT * FROM users WHERE userid LIKE '%0'", listener);
+
   if (!listener.errmsgs.empty()) {
     fprintf(stderr, "Error:%s\n", listener.errmsgs[0].c_str());
   } else if (listener.results.empty()) {

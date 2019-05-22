@@ -143,8 +143,6 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
   int numIndexedColumns = 0;
   int xFilterArgvIndex = 0;
 
-  static std::set<unsigned char> allowed_constraints = { SQLITE_INDEX_CONSTRAINT_EQ };
-
   const TableDef & td = pVT->_implementation->getTableDef();
 
   // gather constraints
@@ -157,12 +155,7 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
         continue;
       }
       if (constraint_info.usable == 0) { continue; }
-
-      if (allowed_constraints.count(constraint_info.op) == 0) {
-        // TODO: look at table constraint flags
-        continue; // table does not support this constraint
-      }
-
+      
       // get column def, dealing with aliases
 
       const ColumnDef *pcoldef = &td.columns[constraint_info.iColumn];
@@ -175,6 +168,19 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
         pcoldef = &td.columns[j];
       }
 
+      // does vtable support the constraint?
+      
+      if (pcoldef->indexOpsImplemented.empty()) {
+        if (constraint_info.op != SQLITE_INDEX_CONSTRAINT_EQ) {
+          continue;
+        }
+      } else {
+        std::vector<int> dd;
+        if (pcoldef->indexOpsImplemented.find((ConstraintOp)constraint_info.op) == pcoldef->indexOpsImplemented.end()) {
+          continue;
+        }
+      }
+      
       // mark use
 
       if (pcoldef->options & REQUIRED) {

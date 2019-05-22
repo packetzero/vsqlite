@@ -32,7 +32,7 @@ public:
     static const TableDef def = {
       SCHEMA_USERS,
       {
-        {FUSERID, ColOpt::INDEXED, "ID of the user", 0}
+        {FUSERID, ColOpt::INDEXED, "ID of the user", 0, { OP_EQ, OP_LIKE }}
         ,{FUSERNAME, 0, "username"}
         ,{FHOME, 0, "home"}
         ,{FUID_ALIAS, ColOpt::ALIAS, "", FUSERID}
@@ -43,7 +43,12 @@ public:
   }
 
   /**
-   * query virtual table
+   * If index is used, prepare will be called once for each value
+   * with the OP_EQ constraint.
+   * For example if 'WHERE userid IN (2,7,9,11)' then prepare() will
+   * be called 4 times.
+   * If there are no index constraints, prepare() will be called
+   * once, then calls to next() until it returns 1;
    */
   int prepare(SPQueryContext context) override {
     // here you would gather:
@@ -64,13 +69,13 @@ public:
         _wantedUserids.insert(constraint.value);
       }
     }
-    
+
     // optimize: check which columns are being requested
 
     if (context->getRequestedColumns().count(FHOME) == 0) {
       _wantsHome = false;
     }
-    
+
     // filter our data
     if (_wantedUserids.empty()) {
       os_enum_users(_data);
@@ -90,7 +95,7 @@ public:
     while (_idx < _data.size()) {
       RawData &pData = _data[_idx++];
 
-      
+
       row[FUSERID] = pData.id;
       row[FUSERNAME] = pData.name;
 
@@ -126,7 +131,7 @@ static std::vector<RawData> _gOsPrivateFakeUserData {
 };
 
 static void os_enum_users(std::vector<RawData> &dest) {
-  
+
   for (auto &item : _gOsPrivateFakeUserData) {
     dest.push_back(item);
   }
@@ -152,5 +157,3 @@ static std::string os_get_user_home(uint32_t userid) {
   }
   return "/home/" + tmp.name;
 }
-
-
