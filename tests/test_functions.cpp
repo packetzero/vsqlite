@@ -48,5 +48,8 @@ TEST_F(FunctionTest, simple_pow) {
   int rv = vsqlite->query("SELECT power(2,10) as val", listener);
   ASSERT_EQ(0, rv);
   ASSERT_EQ(1, listener.results.size());
-  //ASSERT_EQ(listener.results[0]);
+  DynMap &row = listener.results[0];
+  SPFieldDef colId = listener.columnForName("val");
+  ASSERT_FALSE(nullptr == colId);
+  ASSERT_EQ(1024,(int)row[colId]);
 }

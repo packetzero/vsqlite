@@ -108,6 +108,15 @@ struct SimpleQueryListener : public QueryListener {
     results.push_back(row);
     return TL_STATUS_OK;
   }
+  SPFieldDef columnForName(std::string name) {
+    if (results.empty()) { return nullptr; }
+    for (auto it = results[0].begin(); it != results[0].end(); it++) {
+      if (it->first->name == name) {
+        return it->first;
+      }
+    }
+    return nullptr;
+  }
   void onQueryError(const std::string errmsg) override { errmsgs.push_back(errmsg); }
   std::vector<DynMap> results;
   std::vector<std::string> errmsgs;
