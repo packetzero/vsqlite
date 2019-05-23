@@ -49,6 +49,9 @@ namespace vsqlite {
       return 0;
     }
 
+ //----------------------------------------------------------------------
+ // populates DynVal with typed value from 'val'
+ //----------------------------------------------------------------------
  void getSqliteValue(sqlite3_value *val, DynVal &dest) {
 
    auto sqltype = sqlite3_value_type(val);
@@ -72,6 +75,10 @@ namespace vsqlite {
    }
  }
 
+ //----------------------------------------------------------------------
+ // This is a static function that does argument checks before
+ // invoking the AppFunction.func()
+ //----------------------------------------------------------------------
   static void _funcWrapper(sqlite3_context* context,int argc,sqlite3_value** argv) {
     AppFunction* pFunc = (AppFunction*)sqlite3_user_data(context);
     if (nullptr == pFunc) {
@@ -143,7 +150,9 @@ namespace vsqlite {
     }
   }
 
-
+  //----------------------------------------------------------------------
+  // add custom function
+  //----------------------------------------------------------------------
     bool VSQLiteImpl::add(SPAppFunction spFunction) {
 
       if (nullptr == spFunction) { return true; }
@@ -165,6 +174,9 @@ namespace vsqlite {
       return false;
     }
 
+    //----------------------------------------------------------------------
+    // remove function
+    //----------------------------------------------------------------------
     void VSQLiteImpl::remove(SPAppFunction spFunction) {
       // TODO
 

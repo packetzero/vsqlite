@@ -29,7 +29,7 @@ public:
 
   /**
    */
-  int prepare(vsqlite::SPQueryContext context) override {
+  void prepare(vsqlite::SPQueryContext context) override {
     _num_prepare_calls++;
 
     // reset state
@@ -89,21 +89,19 @@ public:
         //_data.push_back(constraint.value.as_s() + "_" + std::to_string((int)constraint.op));
       }
     }
-
-    return 0;
   }
 
-  int next(DynMap &row, uint64_t rowId) override {
+  bool next(DynMap &row) override {
     _num_next_calls++;
 
     while (_idx < _data.size()) {
       std::string path = _data[_idx++];
       row[FPATH] = path;
       row[FPATHLEN] = (uint32_t)path.size();
-      return 0;
+      return true;
     }
 
-    return 1;
+    return false;
   }
 
   void reset() {

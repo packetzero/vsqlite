@@ -8,6 +8,10 @@ namespace vsqlite {
 
   std::string createStatement(const TableDef &td);
 
+  /*
+   * Basis of the QueryContext provided
+   * to table prepare() methods.
+   */
   struct QueryContextImpl : public QueryContext {
     virtual ~QueryContextImpl() {}
     std::vector<Constraint> getConstraints() override {
@@ -21,6 +25,10 @@ namespace vsqlite {
     std::set<SPFieldDef> _colsUsed;
   };
 
+/*
+ * Information about a constraint is provided in xBestIndex,
+ * but the constraint values are not provided until xFilter.
+ */
 struct constraint_info_t {
   SPFieldDef columnId;
   int colIdx;
@@ -28,6 +36,9 @@ struct constraint_info_t {
   unsigned char op;
 };
 
+/*
+ * state needed to track virtual table state.
+ */
 struct my_vtab : public sqlite3_vtab {
   my_vtab(VirtualTable *implementation) : sqlite3_vtab(), _implementation(implementation), _colsUsed(), _constraints() {}
   VirtualTable *_implementation;
@@ -38,6 +49,9 @@ struct my_vtab : public sqlite3_vtab {
   uint64_t _rowId {0};
 };
 
+/*
+ * Cursors are opened after xBestIndex
+ */
 struct my_vtab_cursor : public sqlite3_vtab_cursor {
   my_vtab_cursor(my_vtab *pvt) : sqlite3_vtab_cursor(), _pvt(pvt) {}
 
@@ -78,15 +92,6 @@ static int xConnect(sqlite3* db,
 static int xOpen(sqlite3_vtab* tab, sqlite3_vtab_cursor** ppCursor) {
   auto pCur = new my_vtab_cursor((my_vtab*)tab);
   *ppCursor = pCur;
-  /*
-  auto* pCur = new BaseCursor;
-  auto* pVtab = (VirtualTable*)tab;
-  plan("Opening cursor (" + std::to_string(kPlannerCursorID) +
-       ") for table: " + pVtab->content->name);
-  pCur->id = kPlannerCursorID++;
-  pCur->base.pVtab = tab;
-  *ppCursor = (sqlite3_vtab_cursor*)pCur;
-*/
   return SQLITE_OK;
 }
 
@@ -94,7 +99,6 @@ static int xOpen(sqlite3_vtab* tab, sqlite3_vtab_cursor** ppCursor) {
 // get index of fieldId in columns
 //----------------------------------------------------------------------
 static int getIndexOfColumn(SPFieldDef fieldId, const TableDef &tableDef) {
-  // find the aliased column
   for (int i=0; i < tableDef.columns.size();i++) {
     if (tableDef.columns[i].id == fieldId) {
       return i;
@@ -258,6 +262,9 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
   return SQLITE_OK;
 }
 
+//----------------------------------------------------------------------
+// convenience function
+//----------------------------------------------------------------------
 Constraint _makeConstraint(constraint_info_t &cinfo, sqlite3_value *val) {
   Constraint c;
   c.columnId = cinfo.columnId;
@@ -265,6 +272,19 @@ Constraint _makeConstraint(constraint_info_t &cinfo, sqlite3_value *val) {
   getSqliteValue(val, c.value);
 
   return c;
+}
+
+//----------------------------------------------------------------------
+// call table's next() and advance rowId if data
+// sqlite will call xEof, which  checks for pVC->_row.empty()
+// and if NOT xEof, then will call xColumn to get all
+// columns
+//----------------------------------------------------------------------
+static inline void advanceRow(my_vtab_cursor* pVC) {
+  pVC->_row.clear();
+  if (pVC->_pvt->_implementation->next(pVC->_row) && !pVC->_row.empty()) {
+    pVC->_pvt->_rowId++;
+  }
 }
 
 //----------------------------------------------------------------------
@@ -303,12 +323,11 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
 
   // call vtable's prepare
 
-  /*int status =*/ pVC->_pvt->_implementation->prepare(spContext);
+  pVC->_pvt->_implementation->prepare(spContext);
 
   // get first row, if there is one.
 
-  pVC->_row.clear();
-  /*int status =*/ pVC->_pvt->_implementation->next(pVC->_row, pVT->_rowId++);
+  advanceRow(pVC);
 
   return SQLITE_OK;
 }
@@ -319,11 +338,7 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
 static int xNext(sqlite3_vtab_cursor* psvCur) {
   auto pVC = (my_vtab_cursor*)psvCur;
 
-  pVC->_row.clear();
-  int status = pVC->_pvt->_implementation->next(pVC->_row, pVC->_pvt->_rowId);
-  if (status == 0 && !pVC->_row.empty()) {
-    pVC->_pvt->_rowId++;
-  }
+  advanceRow(pVC);
 
   return SQLITE_OK;
 }
@@ -499,6 +514,11 @@ void VSQLiteImpl::remove(SPVirtualTable spVirtualTable) {
   }
 
 
+//----------------------------------------------------------------------
+// createStatement
+// builds the body of sql 'CREATE STATEMENT'
+// based on TableDef.  Includes all columns, indexes
+//----------------------------------------------------------------------
 std::string createStatement(const TableDef &td) {
   std::map<std::string, bool> epilog;
   bool indexed = false;
@@ -565,10 +585,8 @@ int VSQLiteImpl::add(SPVirtualTable spVirtualTable) {
       _db, tableName.c_str(), getReadOnlyTableModule(), (void*)spVirtualTable.get());
 
   if (rc == SQLITE_OK || rc == SQLITE_MISUSE) {
-    //std::string statement = createStatement(tableDef);
-    //statement = "(" + statement + ")";
     auto sql =
-    "CREATE VIRTUAL TABLE temp." + tableName + " USING " + tableName;// + statement;
+    "CREATE VIRTUAL TABLE temp." + tableName + " USING " + tableName;
 
     rc =
         sqlite3_exec(_db, sql.c_str(), nullptr, nullptr, nullptr);

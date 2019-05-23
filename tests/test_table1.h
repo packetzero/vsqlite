@@ -48,7 +48,7 @@ public:
    * If there are no index constraints, prepare() will be called
    * once, then calls to next() until it returns 1;
    */
-  int prepare(vsqlite::SPQueryContext context) override {
+  void prepare(vsqlite::SPQueryContext context) override {
     _num_prepare_calls++;
 
     // reset state
@@ -84,11 +84,9 @@ public:
         }
       }
     }
-
-    return 0;
   }
 
-  int next(DynMap &row, uint64_t rowId) override {
+  bool next(DynMap &row) override {
     _num_next_calls++;
 
     while (_idx < _data.size()) {
@@ -104,10 +102,10 @@ public:
         row[FLONGO] = pData.i64val;
       }
 
-      return 0;
+      return true;
     }
 
-    return 1;
+    return false;
   }
 
   static const std::vector<RawData> &getRawData() {

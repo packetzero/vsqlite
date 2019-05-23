@@ -2,12 +2,10 @@
 
 using namespace vsqlite;
 
-static const SPSchemaId SCHEMA_USERS = std::make_shared<SchemaId>("users");
-
-static const SPFieldDef FUSERNAME = FieldDef::alloc(TSTRING, "username", SCHEMA_USERS);
-static const SPFieldDef FUSERID = FieldDef::alloc(TUINT32, "userid", SCHEMA_USERS);
+static const SPFieldDef FUSERNAME = FieldDef::alloc(TSTRING, "username");
+static const SPFieldDef FUSERID = FieldDef::alloc(TUINT32, "userid");
 static const SPFieldDef FUID_ALIAS = FieldDef::alloc(TNONE, "uid");
-static const SPFieldDef FHOME = FieldDef::alloc(TSTRING, "home", SCHEMA_USERS);
+static const SPFieldDef FHOME = FieldDef::alloc(TSTRING, "home");
 
 struct RawData {
   int id;
@@ -30,7 +28,7 @@ public:
 
   const TableDef &getTableDef() const override {
     static const TableDef def = {
-      SCHEMA_USERS,
+      std::make_shared<SchemaId>("users"),
       {
         {FUSERID, ColOpt::INDEXED, "ID of the user", 0, { OP_EQ, OP_LIKE }}
         ,{FUSERNAME, 0, "username"}
@@ -50,7 +48,7 @@ public:
    * If there are no index constraints, prepare() will be called
    * once, then calls to next() until it returns 1;
    */
-  int prepare(SPQueryContext context) override {
+  void prepare(SPQueryContext context) override {
 
     // reset state
 
@@ -88,7 +86,7 @@ public:
     return 0;
   }
 
-  int next(DynMap &row, uint64_t rowId) override {
+  bool next(DynMap &row) override {
     while (_idx < _data.size()) {
       RawData &pData = _data[_idx++];
 
@@ -102,10 +100,10 @@ public:
         row[FHOME] = os_get_user_home(pData.id);
       }
 
-      return 0;
+      return true;
     }
 
-    return 1;
+    return false;
   }
 
 private:
