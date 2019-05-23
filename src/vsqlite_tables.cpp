@@ -75,7 +75,7 @@ static int xConnect(sqlite3* db,
   *ppVtab = pvt;
 
   const TableDef &tableDef = pvt->_implementation->getTableDef();
-  auto sql = "CREATE TABLE " +  tableDef.table_name->schemaName + createStatement(tableDef);
+  auto sql = "CREATE TABLE " +  tableDef.schemaId->name + createStatement(tableDef);
   int rc = sqlite3_declare_vtab(db, sql.c_str());
   if (rc != SQLITE_OK) {
     fprintf(stderr, "sqlite3_declare_vtab failed with %d (%s): '%s'\n", rc,
@@ -474,13 +474,13 @@ static sqlite3_module *getReadOnlyTableModule() {
 void VSQLiteImpl::remove(SPVirtualTable spVirtualTable) {
   // TODO:
 
-  auto format = "DROP TABLE IF EXISTS temp." + spVirtualTable->getTableDef().table_name->schemaName;
+  auto format = "DROP TABLE IF EXISTS temp." + spVirtualTable->getTableDef().schemaId->name;
   int rc = sqlite3_exec(_db, format.c_str(), nullptr, nullptr, 0);
   if (rc != SQLITE_OK) {
     //TODO: "Error detaching table: " << name << " (" << rc << ")";
   }
   for (auto it = _tables.begin(); it != _tables.end(); it++) {
-    if ((*it)->getTableDef().table_name == spVirtualTable->getTableDef().table_name) {
+    if ((*it)->getTableDef().schemaId == spVirtualTable->getTableDef().schemaId) {
       _tables.erase(it);
       break;
     }
@@ -580,7 +580,7 @@ std::string createStatement(const TableDef &td) {
 //----------------------------------------------------------------
 int VSQLiteImpl::add(SPVirtualTable spVirtualTable) {
   auto &tableDef = spVirtualTable->getTableDef();
-  auto tableName = tableDef.table_name->schemaName;
+  auto tableName = tableDef.schemaId->name;
   int rc = sqlite3_create_module(
       _db, tableName.c_str(), getReadOnlyTableModule(), (void*)spVirtualTable.get());
 

@@ -259,4 +259,47 @@ namespace vsqlite {
     return gInstance;
   }
 
+  SPVSQLite VSQLiteNew() {
+    return std::make_shared<VSQLiteImpl>();
+  }
+
+
+  std::string TableInfo(SPVirtualTable spTable) {
+    std::string s;
+    if (nullptr == spTable) { return s; }
+    const TableDef &td = spTable->getTableDef();
+    s = td.schemaId->name + " (";
+    int i=-1;
+    for (auto &colDef : td.columns) {
+      if (++i > 0) { s += ", "; }
+      s += colDef.id->name + ":";
+      if (colDef.options & ColOpt::ALIAS) {
+        s += " ALIAS(" + colDef.aliased->name + ")";
+        continue;
+      }
+      s += dyno::TypeName(colDef.id->typeId);
+      if (colDef.options != 0) {
+        if (colDef.options & ColOpt::REQUIRED) { s += " REQUIRED"; }
+        if (colDef.options & ColOpt::INDEXED) { s += " INDEXED"; }
+        if (colDef.options & ColOpt::ADDITIONAL) { s += " ADDITIONAL"; }
+      }
+    }
+    s += ")";
+    return s;
+  }
+
+  std::string FunctionInfo(SPAppFunction spFunction) {
+    std::string s;
+    if (nullptr == spFunction) { return s; }
+    s = spFunction->name() + "(";
+    int i=-1;
+    for (auto arg : spFunction->expectedArgs()) {
+      if (++i > 0) { s += ", "; }
+      s += dyno::TypeName(arg);
+    }
+    s += ")";
+    return s;
+  }
+
+
 } // namespace

@@ -1,4 +1,4 @@
-#include <vsqlite/vsqlite_tables.h>
+#include <vsqlite/vsqlite.h>
 
 #include "example_table.h"
 
@@ -19,38 +19,76 @@ struct Function_sqrt : public vsqlite::AppFunctionBase {
   }
 };
 
+std::vector<vsqlite::SPAppFunction> gFunctions;
+std::vector<vsqlite::SPVirtualTable> gTables;
+
+
+
+static int usage(char *arg0) {
+  printf("usage: %s \"<sql>\"\n", arg0);
+  printf(" virtual tables:\n");
+  for (auto spTable : gTables) {
+    printf("   %s\n", vsqlite::TableInfo(spTable).c_str());
+  }
+  printf(" functions:\n");
+  for (auto spFunction : gFunctions) {
+    printf("   %s\n", vsqlite::FunctionInfo(spFunction).c_str());
+  }
+  printf("\n");
+  return 0;
+}
 
 int main(int argc, char *argv[])
 {
+  gFunctions.push_back(std::make_shared<Function_power>());
+  gFunctions.push_back(std::make_shared<Function_sqrt>());
+  gTables.push_back(newMyUsersTable());
+
+  if (argc < 2) {
+    return usage(argv[0]);
+  }
+
   vsqlite::SPVSQLite vsqlite = vsqlite::VSQLiteInstance();
 
   vsqlite::SimpleQueryListener listener;
 
-  vsqlite->add(std::make_shared<Function_power>());
-  vsqlite->add(std::make_shared<Function_sqrt>());
+  for (auto spFunction : gFunctions) {
+    int status = vsqlite->add(spFunction);
+    if (status) {
+      fprintf(stderr, "Failed to add function:'%s'\n", spFunction->name().c_str());
+    }
+  }
 
-  int status = vsqlite->add(newMyUsersTable());
+  for (auto spTable : gTables) {
+    int status = vsqlite->add(spTable);
+    if (status) {
+      fprintf(stderr, "Failed to add table:'%s'\n", spTable->getTableDef().schemaId->name.c_str());
+    }
+  }
 
 
+  std::string sql = argv[1];
 
-//  status = vsqlite->query("SELECT 1 as num, power(8,2) as sixtyfour, sqrt(64) as ocho, 'some string value' as description, 4.25 as score", listener);
-  //status = vsqlite->query("SELECT uid,username,userid FROM users WHERE username like '%o%'", listener);
-  status = vsqlite->query("SELECT username,userid,home FROM users WHERE userid IN (501,0,520)", listener);
-//  status = vsqlite->query("SELECT * FROM users", listener);
-//  status = vsqlite->query("SELECT * FROM users WHERE userid LIKE '%0'", listener);
+  int status = vsqlite->query(sql, listener);
 
   if (!listener.errmsgs.empty()) {
     fprintf(stderr, "Error:%s\n", listener.errmsgs[0].c_str());
   } else if (listener.results.empty()) {
-    printf("ERROR: no results");
+    if (status != 0) {
+      printf("ERROR: %d\n", status);
+    } else {
+      printf("No results");
+    }
   } else {
+    // print out results
     int i = 0;
     for (DynMap row : listener.results) {
       printf("[%02d] ", i++);
       for (auto it = row.begin(); it != row.end(); it++) {
-        printf("'%s':'%s',", it->first->name.c_str(), it->second.as_s().c_str());
+        std::string value = (it->second.valid() ? it->second.as_s() : "null");
+        printf("'%s':'%s',", it->first->name.c_str(), value.c_str());
       }
-      puts("\n");
+      puts("");
     }
   }
 

@@ -50,7 +50,7 @@ typedef std::shared_ptr<ColumnDef> SPColumnDef;
  * The TableDef is the static definition of your table schema.
  */
 struct TableDef {
-  SPSchemaId table_name;
+  SPSchemaId schemaId;
   std::vector<ColumnDef> columns;
   std::vector<std::string> table_attrs;  // CACHEABLE,EVENT
 };
@@ -236,6 +236,8 @@ struct SimpleQueryListener : public QueryListener {
  */
 SPVSQLite VSQLiteNew();
 
+std::string TableInfo(SPVirtualTable spTable);
 
+std::string FunctionInfo(SPAppFunction spFunction);
 
 } // namespace

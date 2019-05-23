@@ -1,4 +1,4 @@
-#include <vsqlite/vsqlite_tables.h>
+#include <vsqlite/vsqlite.h>
 
 using namespace vsqlite;
 
@@ -82,8 +82,6 @@ public:
         }
       }
     }
-
-    return 0;
   }
 
   bool next(DynMap &row) override {
