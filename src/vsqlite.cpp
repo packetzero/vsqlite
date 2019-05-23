@@ -1,6 +1,8 @@
 
 #include "vsqlite_impl.h"
 
+#define TRACE if (0)
+
 namespace vsqlite {
   int VSQLiteImpl::query(const std::string sql, QueryListener &listener /*std::vector<DynMap> &results*/) {
 
@@ -8,6 +10,7 @@ namespace vsqlite {
       int rv = sqlite3_prepare_v2(_db, sql.c_str(), sql.size(), &pStmt, nullptr);
       if (rv != SQLITE_OK) {
         listener.onQueryError(sqlite3_errstr(rv));
+//        listener.onQueryError(sqlite3_errmsg(_db));
         return -1;
       }
 
@@ -15,6 +18,7 @@ namespace vsqlite {
 
       while (true) {
         rv = sqlite3_step(pStmt);
+        TRACE fprintf(stderr, "step rv=%d\n", rv);
         if (rv == SQLITE_DONE || sqlite3_data_count(pStmt) == 0) { break; }
         if (rv == SQLITE_ROW) {
           if (columns.empty()) {
@@ -84,28 +88,10 @@ namespace vsqlite {
     std::vector<DynVal> argvals;
 
     for (int i=0; i < argc; i++) {
-      auto sqltype = sqlite3_value_type(argv[i]);
-
       argvals.push_back(DynVal());
 
       getSqliteValue(argv[i], argvals[i]);
-/*
-      switch(sqltype) {
-        case SQLITE_INTEGER:
-          argvals[i] = sqlite3_value_int(argv[i]);
-          break;
-        case SQLITE_FLOAT:
-          argvals[i] = sqlite3_value_double(argv[i]);
-          break;
-        case SQLITE_TEXT:
-          argvals[i] = (const char *)(sqlite3_value_text(argv[i]));
-          break;
-        case SQLITE_BLOB:
-        default:
-          assert(false); // TODO
-          break;
-      }
-*/
+
       // convert to expected type
 
       if (TNONE != argdefs[i] && argdefs[i] != argvals[i].type()) {

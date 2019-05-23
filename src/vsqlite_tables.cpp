@@ -2,6 +2,8 @@
 #include "vsqlite_impl.h"
 #include <set>
 
+#define TRACE if(0)
+
 namespace vsqlite {
 
   std::string createStatement(const TableDef &td);
@@ -33,6 +35,7 @@ struct my_vtab : public sqlite3_vtab {
   // following provided in xBestIndex
   std::set<SPFieldDef> _colsUsed;
   std::vector<constraint_info_t> _constraints;
+  uint64_t _rowId {0};
 };
 
 struct my_vtab_cursor : public sqlite3_vtab_cursor {
@@ -40,7 +43,6 @@ struct my_vtab_cursor : public sqlite3_vtab_cursor {
 
   // member variables
   my_vtab *_pvt;
-  uint64_t _rowId {0};
   DynMap   _row;
 };
 
@@ -145,6 +147,9 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
   pVT->_colsUsed.clear();
   pVT->_constraints.clear();
 
+  TRACE fprintf(stderr, "xBestIndex nConstraint:%d idxNum:%d idxFlags:0x%x\n", pIdxInfo->nConstraint, pIdxInfo->idxNum,
+                pIdxInfo->idxFlags);
+
   const TableDef & td = pVT->_implementation->getTableDef();
 
   // gather constraints
@@ -169,6 +174,8 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
         }
         pcoldef = &td.columns[j];
       }
+
+      TRACE fprintf(stderr, "   icol:%d (%s) op:%s termOffset:%d\n", constraint_info.iColumn, pcoldef->id->name.c_str(), opString(constraint_info.op).c_str(), constraint_info.iTermOffset );
 
       // does vtable support the constraint?
 
@@ -236,11 +243,18 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
   }
 
   if (numRequiredConstraints < numRequiredColumns) {
+    if (pVT->zErrMsg != nullptr) {
+      sqlite3_free(pVT->zErrMsg);
+    }
+    pVT->zErrMsg = sqlite3_mprintf("required constraint missing");
     return SQLITE_CONSTRAINT;
   }
 
   pIdxInfo->idxNum = static_cast<int>(kConstraintIndexID++);
 
+  if (xFilterArgvIndex > 0) {
+    pIdxInfo->estimatedCost = 10000;
+  }
   return SQLITE_OK;
 }
 
@@ -264,6 +278,8 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
   auto pVC = (my_vtab_cursor*)psvCur;
   auto pVT = pVC->_pvt;
 
+  TRACE fprintf(stderr, "xFilter idxNum:%d argc:%d\n", idxNum, argc);
+
   auto spContext = std::make_shared<QueryContextImpl>();
 
   // add filter constraints to context
@@ -273,6 +289,7 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
       // not good
     } else {
       for (int i=0; i < argc; i++) {
+        TRACE fprintf(stderr, "     argv[%d]='%s'\n", i, sqlite3_value_text(argv[i]));
         spContext->_constraints.push_back(_makeConstraint(pVT->_constraints[i], argv[i]));
       }
     }
@@ -291,7 +308,7 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
   // get first row, if there is one.
 
   pVC->_row.clear();
-  /*int status =*/ pVC->_pvt->_implementation->next(pVC->_row, pVC->_rowId++);
+  /*int status =*/ pVC->_pvt->_implementation->next(pVC->_row, pVT->_rowId++);
 
   return SQLITE_OK;
 }
@@ -303,9 +320,9 @@ static int xNext(sqlite3_vtab_cursor* psvCur) {
   auto pVC = (my_vtab_cursor*)psvCur;
 
   pVC->_row.clear();
-  int status = pVC->_pvt->_implementation->next(pVC->_row, pVC->_rowId);
+  int status = pVC->_pvt->_implementation->next(pVC->_row, pVC->_pvt->_rowId);
   if (status == 0 && !pVC->_row.empty()) {
-    pVC->_rowId++;
+    pVC->_pvt->_rowId++;
   }
 
   return SQLITE_OK;
@@ -405,7 +422,7 @@ int xDisconnect(sqlite3_vtab* psvTab) {
 
 int xRowid(sqlite3_vtab_cursor* psvCur, sqlite_int64* pRowid) {
   auto pVC = (my_vtab_cursor*)psvCur;
-  *pRowid = pVC->_rowId;
+  *pRowid = pVC->_pvt->_rowId;
   return SQLITE_OK;
 }
 
