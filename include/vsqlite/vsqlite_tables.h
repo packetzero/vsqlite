@@ -47,7 +47,7 @@ struct ColumnDef {
 typedef std::shared_ptr<ColumnDef> SPColumnDef;
 
 /*
- * no support for table aliases
+ * The TableDef is the static definition of your table schema.
  */
 struct TableDef {
   SPSchemaId table_name;
@@ -61,8 +61,23 @@ struct Constraint {
   DynVal value;
 };
 
+/*
+ * A VirtualTable.prepare() method will be called to
+ * filter a set of data based on the QueryContext.
+ */
 struct QueryContext {
+
+  /**
+   * Constraints should be provided for indexed columns
+   * being filtered.
+   */
   virtual std::vector<Constraint> getConstraints() = 0;
+
+  /**
+   * A list of columns being requested by the current
+   * query.  This allows table implementations to optimize
+   * out extra work needed to fetch certain columns of data.
+   */
   virtual std::set<SPFieldDef> getRequestedColumns() = 0;
 };
 typedef std::shared_ptr<QueryContext> SPQueryContext;
@@ -98,11 +113,105 @@ struct VirtualTable {
 };
 typedef std::shared_ptr<VirtualTable> SPVirtualTable;
 
+/**
+ * To receive results from vsqlite.query(), you need to implement
+ * and provide a QueryListener implementation.  See the
+ * SimpleQueryListener class for a default implementation.
+ */
 struct QueryListener {
+
+  /*
+   * Called for every data result row.
+   */
   virtual TLStatus onResultRow(DynMap &row) = 0;
+
+  /*
+   * Called if a virtual table wants to report an error.
+   */
   virtual void onQueryError(const std::string errmsg) = 0;
 };
 
+/**
+ * Interface for a custom function to hook into vsqlite.
+ */
+struct AppFunction {
+
+  virtual const std::string name() const = 0;
+
+  virtual const std::vector<DynType> &expectedArgs() const = 0;
+
+  /**
+   * The actual function implementation called by database.
+   * @param args Function argument values. size and types will match expectedArgs.
+   * @param errmsg If there is an error condition, function can set errmsg.
+   * @returns typed value. If the function could fail, then returns
+   * empty DynVal() value where DynVal.valid() == false.  The vsqlite layer
+   * will turn that into a null result.
+   */
+  virtual DynVal func(const std::vector<DynVal> &args, std::string &errmsg) = 0;
+};
+typedef std::shared_ptr<AppFunction> SPAppFunction;
+
+/**
+ * Interface to vsqlite database instance.
+ */
+struct VSQLite {
+
+  /*
+   * query the database.
+   */
+  virtual int query(const std::string sql, QueryListener &results) = 0;
+
+  /*
+   * add and remove application defined functions to db.
+   */
+
+  virtual bool add(SPAppFunction spFunction) = 0;
+
+  virtual void remove(SPAppFunction spFunction) = 0;
+
+  /*
+   * add and remove application defined virtual tables
+   */
+
+  virtual int add(SPVirtualTable spVirtualTable) = 0;
+
+  virtual void remove(SPVirtualTable spVirtualTable) = 0;
+
+};
+typedef std::shared_ptr<VSQLite> SPVSQLite;
+
+/**
+ * Get shared singleton instance of database.
+ */
+SPVSQLite VSQLiteInstance();
+
+// ================== Implementations ==========================
+
+
+/**
+ * Base-class for custom functions to hook into vsqlite
+ */
+struct AppFunctionBase : public AppFunction {
+  /*
+   * Sets name and expectedArgs.
+   */
+  AppFunctionBase(const std::string name, const std::vector<DynType> argtypes):
+    _name(name), _argtypes(argtypes) {}
+
+  virtual ~AppFunctionBase() { }
+
+  const std::string name() const override { return _name; }
+
+  const std::vector<DynType> &expectedArgs() const override { return _argtypes; }
+
+  const std::string _name;
+  const std::vector<DynType> _argtypes;
+};
+
+/**
+ * Basic implementation of QueryListener
+ */
 struct SimpleQueryListener : public QueryListener {
   TLStatus onResultRow(DynMap &row) override {
     results.push_back(row);
@@ -122,48 +231,11 @@ struct SimpleQueryListener : public QueryListener {
   std::vector<std::string> errmsgs;
 };
 
-struct AppFunction {
+/**
+ * Tests may need additional clean instances of the database.
+ */
+SPVSQLite VSQLiteNew();
 
-  virtual const std::string name() const = 0;
-
-  virtual const std::vector<DynType> &expectedArgs() const = 0;
-
-  virtual DynVal func(const std::vector<DynVal> &args, std::string &errmsg) = 0;
-};
-typedef std::shared_ptr<AppFunction> SPAppFunction;
-
-struct AppFunctionBase : public AppFunction {
-  AppFunctionBase(const std::string name, const std::vector<DynType> argtypes):
-    _name(name), _argtypes(argtypes) {}
-
-  virtual ~AppFunctionBase() { }
-
-  const std::string name() const override { return _name; }
-
-  const std::vector<DynType> &expectedArgs() const override { return _argtypes; }
-
-  const std::string _name;
-  const std::vector<DynType> _argtypes;
-};
-
-struct VSQLite {
-
-//  virtual int query(const std::string sql, std::vector<DynMap> &results) = 0;
-
-  virtual int query(const std::string sql, QueryListener &results) = 0;
-
-  virtual bool add(SPAppFunction spFunction) = 0;
-
-  virtual void remove(SPAppFunction spFunction) = 0;
-
-  virtual int add(SPVirtualTable spVirtualTable) = 0;
-
-  virtual void remove(SPVirtualTable spVirtualTable) = 0;
-
-};
-typedef std::shared_ptr<VSQLite> SPVSQLite;
-
-SPVSQLite VSQLiteInstance();
 
 
 } // namespace
