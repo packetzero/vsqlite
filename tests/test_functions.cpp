@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <string>
 
-#include "../include/vsqlite/vsqlite_tables.h"
+#include "../include/vsqlite/vsqlite.h"
 
 struct Function_power : public vsqlite::AppFunctionBase {
   Function_power() : vsqlite::AppFunctionBase("power", { TFLOAT64, TFLOAT64 }) {}

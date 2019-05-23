@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../include/vsqlite/vsqlite_tables.h"
+#include "../include/vsqlite/vsqlite.h"
 #include <sqlite3.h>
 
 namespace vsqlite {

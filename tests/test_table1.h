@@ -1,5 +1,5 @@
 
-#include "../include/vsqlite/vsqlite_tables.h"
+#include "../include/vsqlite/vsqlite.h"
 
 
 class T1Table : public vsqlite::VirtualTable {
