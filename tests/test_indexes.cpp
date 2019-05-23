@@ -148,22 +148,25 @@ TEST_F(IndexTest, required_like_missing) {
   ASSERT_FALSE(listener.errmsgs.empty());
 }
 TEST_F(IndexTest, required_like) {
-  int rv = vsqlite->query("SELECT * FROM tpath_len WHERE path LIKE '/dev/%' OR path LIKE '/home/%'", listener);
+  int rv = vsqlite->query("SELECT * FROM tpath_len WHERE path LIKE '/dev/%0' OR path LIKE '/home/%'", listener);
   ASSERT_EQ(0, rv);
   ASSERT_EQ(2, spTable2->_num_prepare_calls); // one for each LIKE term
   ASSERT_EQ(2, spTable2->_num_index_constraints);
-  ASSERT_EQ(8, spTable2->_num_next_calls);
+  ASSERT_EQ(12, spTable2->_num_next_calls);
 
-  EXPECT_EQ(6, listener.results.size());
+  EXPECT_EQ(7, listener.results.size());
 
+  // again to check for consistency
+  
   listener.results.clear();
-  rv = vsqlite->query("SELECT * FROM tpath_len WHERE path LIKE '/dev/%' OR path LIKE '/home/%'", listener);
+  rv = vsqlite->query("SELECT * FROM tpath_len WHERE path LIKE '/dev/%0' OR path LIKE '/home/%'", listener);
 
   ASSERT_EQ(0, rv);
   ASSERT_EQ(4, spTable2->_num_prepare_calls); // one for each LIKE term
   ASSERT_EQ(4, spTable2->_num_index_constraints);
-  ASSERT_EQ(16, spTable2->_num_next_calls);
-  
-  EXPECT_EQ(6, listener.results.size());
+  ASSERT_EQ(24, spTable2->_num_next_calls);
+
+  EXPECT_EQ(7, listener.results.size());
+
 
 }
