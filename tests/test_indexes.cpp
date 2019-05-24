@@ -147,6 +147,7 @@ TEST_F(IndexTest, required_like_missing) {
   ASSERT_EQ(-1, rv);
   ASSERT_FALSE(listener.errmsgs.empty());
 }
+
 TEST_F(IndexTest, required_like) {
   int rv = vsqlite->query("SELECT * FROM tpath_len WHERE path LIKE '/dev/%0' OR path LIKE '/home/%'", listener);
   ASSERT_EQ(0, rv);
@@ -167,6 +168,27 @@ TEST_F(IndexTest, required_like) {
   ASSERT_EQ(24, spTable2->_num_next_calls);
 
   EXPECT_EQ(7, listener.results.size());
+}
 
+/*
+ * I found this test case by accident.
+ * The table state gets confused.
+ * The subselect only has u32val column used, but outer select
+ * has all columns.  The implementation was acting as if not all
+ * columns were requested.
+ */
+TEST_F(IndexTest, sub_select_index_colsused) {
+  int rv = vsqlite->query("SELECT * FROM t1 WHERE u32val IN (SELECT u32val FROM t1)", listener);
+  ASSERT_EQ(0, rv);
+  EXPECT_EQ((T1Table::getRawData().size()+1), spTable->_num_prepare_calls);
+  EXPECT_EQ((T1Table::getRawData().size()), spTable->_num_index_constraints);
+  int num_next_calls = 0;
+  // called once for each + 1 to get indexes in subquery
+  num_next_calls += (T1Table::getRawData().size() + 1);
+  // called twice for each indexed data item
+  num_next_calls += (T1Table::getRawData().size()) * 2;
 
+  EXPECT_EQ((T1Table::getRawData().size()*3+1), spTable->_num_next_calls);
+  
+  EXPECT_EQ((T1Table::getRawData().size()), listener.results.size());
 }

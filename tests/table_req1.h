@@ -91,7 +91,7 @@ public:
     }
   }
 
-  bool next(DynMap &row) override {
+  bool next(vsqlite::SPQueryContext context, DynMap &row) override {
     _num_next_calls++;
 
     while (_idx < _data.size()) {

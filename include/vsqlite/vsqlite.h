@@ -79,6 +79,13 @@ struct QueryContext {
    * out extra work needed to fetch certain columns of data.
    */
   virtual std::set<SPFieldDef> getRequestedColumns() = 0;
+
+  /*
+   * Table implementations can attach it's own state to the context,
+   * which will follow from prepare() to each next() call.
+   */
+  virtual void setUserData(std::shared_ptr<void> spTablePrivate) = 0;
+  virtual std::shared_ptr<void> getUserData() = 0;
 };
 typedef std::shared_ptr<QueryContext> SPQueryContext;
 
@@ -109,7 +116,7 @@ struct VirtualTable {
    * @param data Gets set when data is available (out param)
    * @returns true if data is available, false if no more data.
    */
-  virtual bool next(DynMap &row) = 0;
+  virtual bool next(SPQueryContext context, DynMap &row) = 0;
 };
 typedef std::shared_ptr<VirtualTable> SPVirtualTable;
 

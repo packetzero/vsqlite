@@ -7,6 +7,17 @@
 namespace vsqlite {
 
   std::string createStatement(const TableDef &td);
+  
+  /*
+   * Information about a constraint is provided in xBestIndex,
+   * but the constraint values are not provided until xFilter.
+   */
+  struct constraint_info_t {
+    SPFieldDef columnId;
+    int colIdx;
+    int termIdx;
+    unsigned char op;
+  };
 
   /*
    * Basis of the QueryContext provided
@@ -20,32 +31,35 @@ namespace vsqlite {
     std::set<SPFieldDef> getRequestedColumns() override {
       return _colsUsed;
     }
+    
+    void setUserData(std::shared_ptr<void> spTablePrivate) override {
+      _userData = spTablePrivate;
+    }
+    std::shared_ptr<void> getUserData() override {
+      return _userData;
+    }
+
+    int _idxNum {0};    // matches value set in xBestIndex
+    std::vector<constraint_info_t> _constraint_infos;
+    std::set<SPFieldDef> _colsUsed;
+    bool _has_xFilter_call {false}; // if we see it in xFilter, set to true.
 
     std::vector<Constraint> _constraints;
-    std::set<SPFieldDef> _colsUsed;
+    std::shared_ptr<void> _userData;
   };
 
-/*
- * Information about a constraint is provided in xBestIndex,
- * but the constraint values are not provided until xFilter.
- */
-struct constraint_info_t {
-  SPFieldDef columnId;
-  int colIdx;
-  int termIdx;
-  unsigned char op;
-};
-
+  
 /*
  * state needed to track virtual table state.
  */
 struct my_vtab : public sqlite3_vtab {
-  my_vtab(VirtualTable *implementation) : sqlite3_vtab(), _implementation(implementation), _colsUsed(), _constraints() {}
+  my_vtab(VirtualTable *implementation) : sqlite3_vtab(), _implementation(implementation), _contexts() {} //_colsUsed(), _constraints() {}
   VirtualTable *_implementation;
 
   // following provided in xBestIndex
-  std::set<SPFieldDef> _colsUsed;
-  std::vector<constraint_info_t> _constraints;
+  //std::set<SPFieldDef> _colsUsed;
+  //std::vector<constraint_info_t> _constraints;
+  std::vector<std::shared_ptr<QueryContextImpl> > _contexts;
   uint64_t _rowId {0};
 };
 
@@ -58,6 +72,7 @@ struct my_vtab_cursor : public sqlite3_vtab_cursor {
   // member variables
   my_vtab *_pvt;
   DynMap   _row;
+  std::shared_ptr<QueryContextImpl> _context;
 };
 
 
@@ -148,10 +163,13 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
   int numRequiredColumns = 0;
   int numIndexedColumns = 0;
   int xFilterArgvIndex = 0;
-  pVT->_colsUsed.clear();
-  pVT->_constraints.clear();
+  
+  auto spContext = std::make_shared<QueryContextImpl>();
+  spContext->_idxNum = kConstraintIndexID++;
+//  pVT->_colsUsed.clear();
+//  pVT->_constraints.clear();
 
-  TRACE fprintf(stderr, "xBestIndex nConstraint:%d idxNum:%d idxFlags:0x%x\n", pIdxInfo->nConstraint, pIdxInfo->idxNum,
+  TRACE fprintf(stderr, "xBestIndex nConstraint:%d idxNum:%d idxFlags:0x%x\n", pIdxInfo->nConstraint, spContext->_idxNum,
                 pIdxInfo->idxFlags);
 
   const TableDef & td = pVT->_implementation->getTableDef();
@@ -207,7 +225,7 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
 
       pIdxInfo->aConstraintUsage[i].argvIndex = ++xFilterArgvIndex;
 
-      pVT->_constraints.push_back({pcoldef->id, constraint_info.iColumn, constraint_info.iTermOffset, constraint_info.op});
+      spContext->_constraint_infos.push_back({pcoldef->id, constraint_info.iColumn, constraint_info.iTermOffset, constraint_info.op});
     }
   }
 
@@ -241,7 +259,7 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
 
     if (pIdxInfo->colUsed & (1LL << i)) {
 
-      pVT->_colsUsed.insert(pcoldef->id);
+      spContext->_colsUsed.insert(pcoldef->id);
       //fprintf(stderr, "column used:'%s'\n", pcoldef->id->name.c_str());
     }
   }
@@ -254,7 +272,8 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
     return SQLITE_CONSTRAINT;
   }
 
-  pIdxInfo->idxNum = static_cast<int>(kConstraintIndexID++);
+  pIdxInfo->idxNum = static_cast<int>(spContext->_idxNum);//   kConstraintIndexID++);
+  pVT->_contexts.push_back(spContext);
 
   if (xFilterArgvIndex > 0) {
     pIdxInfo->estimatedCost = 10000;
@@ -280,15 +299,18 @@ Constraint _makeConstraint(constraint_info_t &cinfo, sqlite3_value *val) {
 // and if NOT xEof, then will call xColumn to get all
 // columns
 //----------------------------------------------------------------------
-static inline void advanceRow(my_vtab_cursor* pVC) {
+  static inline void advanceRow(my_vtab_cursor* pVC) {
   pVC->_row.clear();
-  if (pVC->_pvt->_implementation->next(pVC->_row) && !pVC->_row.empty()) {
+    TRACE fprintf(stderr, "calling next() idxNum:%d _rowId:%llu\n", pVC->_context->_idxNum, pVC->_pvt->_rowId);
+    if (pVC->_pvt->_implementation->next(std::static_pointer_cast<QueryContext>(pVC->_context), pVC->_row) && !pVC->_row.empty()) {
     pVC->_pvt->_rowId++;
   }
 }
 
 //----------------------------------------------------------------------
 // Called after xBestIndex, but not always?
+// TODO: cleanup spContext that are created in xBestIndex, but
+// sqlite chooses not to use (and then xFilter not called).
 //----------------------------------------------------------------------
 static int xFilter(sqlite3_vtab_cursor* psvCur,
                    int idxNum,
@@ -299,30 +321,45 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
   auto pVT = pVC->_pvt;
 
   TRACE fprintf(stderr, "xFilter idxNum:%d argc:%d\n", idxNum, argc);
+  std::shared_ptr<QueryContextImpl> spContext;
+  for (auto spc : pVT->_contexts) {
+    if (idxNum == spc->_idxNum) {
+      spContext = spc;
+    }
+  }
+  if (nullptr == spContext) {
+    // not found.
+    fprintf(stderr, "state ERROR : context not found in xFilter idxNum:%d\n", idxNum);
+    return SQLITE_ERROR;
+  }
 
-  auto spContext = std::make_shared<QueryContextImpl>();
+  // xFilter will be called multiple times for OP_EQ indexes
+  // with the same cursor, and thus the same Constraints state.
+  // so clear constraints. each time.
+  spContext->_constraints.clear();
+  spContext->_has_xFilter_call = true;
 
   // add filter constraints to context
 
-  if (argc > 0 && !pVT->_constraints.empty()) {
-    if (argc > pVT->_constraints.size()) {
+  if (argc > 0 && !spContext->_constraint_infos.empty()) {
+    if (argc > spContext->_constraint_infos.size()) {
       // not good
     } else {
       for (int i=0; i < argc; i++) {
         TRACE fprintf(stderr, "     argv[%d]='%s'\n", i, sqlite3_value_text(argv[i]));
-        spContext->_constraints.push_back(_makeConstraint(pVT->_constraints[i], argv[i]));
+        spContext->_constraints.push_back(_makeConstraint(spContext->_constraint_infos[i], argv[i]));
       }
     }
   }
-
+/*
   // add requested columns to context
 
-  for (auto id : pVT->_colsUsed) {
+  for (auto id : spContext->_colsUsed) {
     spContext->_colsUsed.insert(id);
   }
-
+*/
   // call vtable's prepare
-
+  pVC->_context = spContext;
   pVC->_pvt->_implementation->prepare(spContext);
 
   // get first row, if there is one.

@@ -11,6 +11,13 @@ public:
     int64_t i64val;
     bool active;
   };
+  
+  struct MyState {
+    std::vector<RawData> _data;
+    std::set<uint32_t> _wantedIds;
+    bool _wantsAllFields {true};
+    size_t _idx;
+  };
 
   T1Table() {
   }
@@ -51,18 +58,16 @@ public:
   void prepare(vsqlite::SPQueryContext context) override {
     _num_prepare_calls++;
 
-    // reset state
-
-    _idx = 0;
-    _data.clear();
-    _wantedIds.clear();
-    _wantsAllFields = true;
+    // make state
+    
+    auto spState = std::make_shared<MyState>();
+    context->setUserData(spState);
 
     // gather filter constraints
 
     for (auto constraint : context->getConstraints()) {
       if (constraint.columnId == FU32VAL && constraint.op == vsqlite::OP_EQ) {
-        _wantedIds.insert(constraint.value);
+        spState->_wantedIds.insert(constraint.value);
         _num_index_constraints++;
       }
     }
@@ -70,27 +75,29 @@ public:
     // optimize: check which columns are being requested
 
     if (context->getRequestedColumns().count(FLONGO) == 0) {
-      _wantsAllFields = false;
+      spState->_wantsAllFields = false;
     }
 
     // filter our data
-    if (_wantedIds.empty()) {
-      get_all_data(_data);
+    if (spState->_wantedIds.empty()) {
+      get_all_data(spState->_data);
     } else {
-      for (auto id : _wantedIds) {
+      for (auto id : spState->_wantedIds) {
         RawData tmp;
         if (0 == filter_data_by_u32val(id, tmp)) {
-          _data.push_back(tmp);
+          spState->_data.push_back(tmp);
         }
       }
     }
   }
 
-  bool next(DynMap &row) override {
+  bool next(vsqlite::SPQueryContext context, DynMap &row) override {
     _num_next_calls++;
+    
+    std::shared_ptr<MyState> spState = std::static_pointer_cast<MyState>(context->getUserData());
 
-    while (_idx < _data.size()) {
-      RawData &pData = _data[_idx++];
+    while (spState->_idx < spState->_data.size()) {
+      RawData &pData = spState->_data[spState->_idx++];
 
 
       row[FU32VAL] = pData.u32val;
@@ -98,13 +105,13 @@ public:
       row[FDVAL] = pData.dval;
       row[FACTIVE] = pData.active;
 
-      if (_wantsAllFields) {
+      if (spState->_wantsAllFields) {
         row[FLONGO] = pData.i64val;
       }
 
       return true;
     }
-
+  
     return false;
   }
 
@@ -149,8 +156,4 @@ private:
     return 1;
   }
 
-  std::vector<RawData> _data;
-  std::set<uint32_t> _wantedIds;
-  bool _wantsAllFields;
-  size_t _idx;
 };

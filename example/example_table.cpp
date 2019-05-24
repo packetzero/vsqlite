@@ -84,7 +84,7 @@ public:
     }
   }
 
-  bool next(DynMap &row) override {
+  bool next(vsqlite::SPQueryContext context, DynMap &row) override {
     while (_idx < _data.size()) {
       RawData &pData = _data[_idx++];
 
