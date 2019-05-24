@@ -32,6 +32,10 @@ namespace vsqlite {
       return _colsUsed;
     }
     
+    /*
+     * Table implementations can set user data so they can
+     * track state between prepare() and next() callbacks.
+     */
     void setUserData(std::shared_ptr<void> spTablePrivate) override {
       _userData = spTablePrivate;
     }
@@ -42,7 +46,6 @@ namespace vsqlite {
     int _idxNum {0};    // matches value set in xBestIndex
     std::vector<constraint_info_t> _constraint_infos;
     std::set<SPFieldDef> _colsUsed;
-    bool _has_xFilter_call {false}; // if we see it in xFilter, set to true.
 
     std::vector<Constraint> _constraints;
     std::shared_ptr<void> _userData;
@@ -306,7 +309,7 @@ Constraint _makeConstraint(constraint_info_t &cinfo, sqlite3_value *val) {
     pVC->_pvt->_rowId++;
   }
 }
-
+#define MAX_CONTEXT_BACKLOG 20
 //----------------------------------------------------------------------
 // Called after xBestIndex, but not always?
 // TODO: cleanup spContext that are created in xBestIndex, but
@@ -322,13 +325,32 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
 
   TRACE fprintf(stderr, "xFilter idxNum:%d argc:%d\n", idxNum, argc);
   std::shared_ptr<QueryContextImpl> spContext;
-  for (auto spc : pVT->_contexts) {
-    if (idxNum == spc->_idxNum) {
-      spContext = spc;
+
+  // find matching context setup in xBestIndex
+  // while we are at it, erase old contexts
+
+  for (auto it = pVT->_contexts.begin(); it != pVT->_contexts.end();) {
+
+    // erase 'old' context, based on idxNum.
+    // How many can be in-flight at same time?
+    // Can have several for a given query or subquery.
+
+    if ((*it)->_idxNum < (idxNum - MAX_CONTEXT_BACKLOG)) {
+      pVT->_contexts.erase(it++);
+      continue;
     }
+    
+    if ((*it)->_idxNum == idxNum) {
+      spContext = *it;
+      break;
+    }
+
+    it++;
   }
+
+  // did we find it?
+
   if (nullptr == spContext) {
-    // not found.
     fprintf(stderr, "state ERROR : context not found in xFilter idxNum:%d\n", idxNum);
     return SQLITE_ERROR;
   }
@@ -337,7 +359,6 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
   // with the same cursor, and thus the same Constraints state.
   // so clear constraints. each time.
   spContext->_constraints.clear();
-  spContext->_has_xFilter_call = true;
 
   // add filter constraints to context
 
@@ -351,13 +372,7 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
       }
     }
   }
-/*
-  // add requested columns to context
 
-  for (auto id : spContext->_colsUsed) {
-    spContext->_colsUsed.insert(id);
-  }
-*/
   // call vtable's prepare
   pVC->_context = spContext;
   pVC->_pvt->_implementation->prepare(spContext);
@@ -387,8 +402,6 @@ static int xNext(sqlite3_vtab_cursor* psvCur) {
 //----------------------------------------------------------------------
 static int xColumn(sqlite3_vtab_cursor* psvCur, sqlite3_context* ctx, int col) {
   auto pVC = (my_vtab_cursor*)psvCur;
-
-  // TODO: what about column aliases, and hidden columns?
 
   const TableDef &tableDef = pVC->_pvt->_implementation->getTableDef();
   if (col < 0 || col >= tableDef.columns.size()) {

@@ -51,5 +51,6 @@ TEST_F(FunctionTest, simple_pow) {
   DynMap &row = listener.results[0];
   SPFieldDef colId = listener.columnForName("val");
   ASSERT_FALSE(nullptr == colId);
+  ASSERT_EQ(TFLOAT64, row[colId].type());
   ASSERT_EQ(1024,(int)row[colId]);
 }
