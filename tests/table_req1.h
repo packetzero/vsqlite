@@ -27,15 +27,20 @@ public:
     return def;
   }
 
+  struct MyState {
+    std::vector<std::string> _data;
+    size_t _idx;
+  };
+
   /**
    */
   void prepare(vsqlite::SPQueryContext context) override {
     _num_prepare_calls++;
 
-    // reset state
-
-    _idx = 0;
-    _data.clear();
+    // make state
+    
+    auto spState = std::make_shared<MyState>();
+    context->setUserData(spState);
 
     // gather index constraints for filtering data
 
@@ -53,7 +58,7 @@ public:
       if (constraint.columnId == FPATH && constraint.op == vsqlite::OP_EQ) {
 
         std::string path = constraint.value;
-        _data.push_back(path);
+        spState->_data.push_back(path);
         _num_index_constraints++;
 
       } else if (constraint.columnId == FPATH && constraint.op == vsqlite::OP_LIKE) {
@@ -70,7 +75,7 @@ public:
           std::string prefix = pat.substr(0,pos);
           for (const std::string &item : rawData()) {
             if (item.find(prefix) == 0) {
-              _data.push_back(item);
+              spState->_data.push_back(item);
             }
           }
           _num_index_constraints++;
@@ -94,8 +99,10 @@ public:
   bool next(vsqlite::SPQueryContext context, DynMap &row) override {
     _num_next_calls++;
 
-    while (_idx < _data.size()) {
-      std::string path = _data[_idx++];
+    std::shared_ptr<MyState> spState = std::static_pointer_cast<MyState>(context->getUserData());
+
+    while (spState->_idx < spState->_data.size()) {
+      std::string path = spState->_data[spState->_idx++];
       row[FPATH] = path;
       row[FPATHLEN] = (uint32_t)path.size();
       return true;
@@ -130,9 +137,4 @@ public:
   uint32_t _num_prepare_calls {0};
   uint32_t _num_next_calls {0};
   uint32_t _num_index_constraints {0};
-
-private:
-
-  std::vector<std::string> _data;
-  size_t _idx;
 };

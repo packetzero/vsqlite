@@ -40,6 +40,13 @@ public:
     return def;
   }
 
+  struct MyState {
+    std::vector<RawData> _data;
+    std::set<uint32_t> _wantedUserids;
+    size_t _idx;
+    bool _wantsHome {true};
+  };
+
   /**
    * If index is used, prepare will be called once for each value
    * with the OP_EQ constraint.
@@ -50,43 +57,43 @@ public:
    */
   void prepare(SPQueryContext context) override {
 
-    // reset state
-
-    _idx = 0;
-    _data.clear();
-    _wantedUserids.clear();
-    _wantsHome = true;
+    // make state
+    
+    auto spState = std::make_shared<MyState>();
+    context->setUserData(spState);
 
     // gather filter constraints
 
     for (auto constraint : context->getConstraints()) {
       if (constraint.columnId == FUSERID && constraint.op == OP_EQ) {
-        _wantedUserids.insert(constraint.value);
+        spState->_wantedUserids.insert(constraint.value);
       }
     }
 
     // optimize: check which columns are being requested
 
     if (context->getRequestedColumns().count(FHOME) == 0) {
-      _wantsHome = false;
+      spState->_wantsHome = false;
     }
 
     // filter our data
-    if (_wantedUserids.empty()) {
-      os_enum_users(_data);
+    if (spState->_wantedUserids.empty()) {
+      os_enum_users(spState->_data);
     } else {
-      for (auto userid : _wantedUserids) {
+      for (auto userid : spState->_wantedUserids) {
         RawData tmp;
         if (0 == os_get_user_by_id(userid, tmp)) {
-          _data.push_back(tmp);
+          spState->_data.push_back(tmp);
         }
       }
     }
   }
 
   bool next(vsqlite::SPQueryContext context, DynMap &row) override {
-    while (_idx < _data.size()) {
-      RawData &pData = _data[_idx++];
+    std::shared_ptr<MyState> spState = std::static_pointer_cast<MyState>(context->getUserData());
+
+    while (spState->_idx < spState->_data.size()) {
+      RawData &pData = spState->_data[spState->_idx++];
 
 
       row[FUSERID] = pData.id;
@@ -94,7 +101,7 @@ public:
 
       // optimize : if 'home' column not in query, no need to call.
 
-      if (_wantsHome) {
+      if (spState->_wantsHome) {
         row[FHOME] = os_get_user_home(pData.id);
       }
 
@@ -103,12 +110,6 @@ public:
 
     return false;
   }
-
-private:
-  std::vector<RawData> _data;
-  std::set<uint32_t> _wantedUserids;
-  size_t _idx;
-  bool _wantsHome;
 };
 
 SPVirtualTable newMyUsersTable() { return std::make_shared<MyUsersTable>(); }

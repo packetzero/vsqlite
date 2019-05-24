@@ -12,7 +12,7 @@ C++11 library for using sqlite3 in-memory database to query virtual tables and c
  - Osquery supports extension tables using thrift IPC, this library does not.  It's up to the application to provide IPC proxies.
 
 ## Virtual Tables
-Virtual table implementations implement the following simple interface.  The design is a high-level model of sqlite3's native model.  The prepare() call is used to filter data based on context's constraints, if there are any.  The next() method will be called until it returns false, indicating that there is no data left for the current constraints.
+Virtual table implementations implement the following simple interface.  The design is a high-level model of sqlite3's native model.  The prepare() call is used to filter data based on context's constraints, if there are any.  The next() method will be called until it returns false, indicating that there is no data left for the current constraints.  The table implementation can define a class or struct to keep track of current state and attaching an instance as user-data on the context inside prepare(), then getting the context user data inside next().
 The TableDef lists the table name, column details (name, type, options, indexes).
 *The prepare() method will be called once for a query with no constraints, but it could be call 1000 times for a single query. See the section on Indexes below.*
 ```
@@ -22,7 +22,7 @@ struct VirtualTable {
 
   virtual void prepare(SPQueryContext context) = 0;
 
-  virtual bool next(DynMap &row) = 0;
+  virtual bool next(SPQueryContext context, DynMap &row) = 0;
 }
 ```
 

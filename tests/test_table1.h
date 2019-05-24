@@ -127,6 +127,8 @@ public:
     return _gRawData;
   }
 
+  // allow unit tests to reset counters
+
   void reset() {
     _num_next_calls = 0;
     _num_prepare_calls = 0;
