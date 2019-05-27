@@ -186,8 +186,30 @@ namespace vsqlite {
     // remove function
     //----------------------------------------------------------------------
     void VSQLiteImpl::remove(SPAppFunction spFunction) {
-      // TODO
+      
+      // remove from _funcs list
+      
+      for (auto it = _funcs.begin(); it != _funcs.end(); it++) {
+        if ((*it)->name() == spFunction->name()) {
+          _funcs.erase(it);
+          break;
+        }
+      }
 
+      // according to docs, to remove, pass all nullptrs for callbacks
+      // https://www.sqlite.org/c3ref/create_function.html
+
+      int rv = sqlite3_create_function(_db,
+                                       spFunction->name().c_str(),
+                                       spFunction->expectedArgs().size(),
+                                       SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+                                       spFunction.get(),
+                                       nullptr,
+                                       nullptr,
+                                       nullptr);
+      if (rv != SQLITE_OK) {
+        // TODO: log
+      }
     }
 
     //--------------------------------------------------------------------

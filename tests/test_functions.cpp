@@ -27,6 +27,14 @@ struct Function_pi : public vsqlite::AppFunctionBase {
   }
 };
 
+struct Function_hola : public vsqlite::AppFunctionBase {
+  Function_hola() : vsqlite::AppFunctionBase("hola", { TSTRING }) {}
+  
+  DynVal func(const std::vector<DynVal> &args, std::string &errmsg) override {
+    return "Hola " + args[0].as_s();
+  }
+};
+
 
 static uint32_t gCount = 0;
 
@@ -88,4 +96,28 @@ TEST_F(FunctionTest, simple_noargs) {
   ASSERT_FALSE(nullptr == colId);
   ASSERT_EQ(TFLOAT64, row[colId].type());
   ASSERT_EQ(3.1415,(double)row[colId]);
+}
+
+TEST_F(FunctionTest, add_remove) {
+  int rv = vsqlite->query("SELECT hola('Bob') as val", listener);
+  EXPECT_NE(0, rv);
+  // register
+  auto func = std::make_shared<Function_hola>();
+  rv = vsqlite->add(func);
+  EXPECT_EQ(0, rv);
+  rv = vsqlite->query("SELECT hola('Bob') as val", listener);
+  // should succeed
+  ASSERT_EQ(0, rv);
+  ASSERT_EQ(1, listener.results.size());
+  auto colId = listener.columnForName("val");
+  EXPECT_EQ("Hola Bob", listener.results[0][colId].as_s());
+
+  // unregister
+  vsqlite->remove(func);
+
+  // try again
+  rv = vsqlite->query("SELECT hola('Bob') as val", listener);
+  // should fail
+  EXPECT_NE(0, rv);
+
 }

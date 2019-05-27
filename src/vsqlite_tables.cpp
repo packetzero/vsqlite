@@ -522,19 +522,26 @@ static sqlite3_module *getReadOnlyTableModule() {
 }
 
 void VSQLiteImpl::remove(SPVirtualTable spVirtualTable) {
-  // TODO:
+  // remove from _tables list
 
-  auto format = "DROP TABLE IF EXISTS temp." + spVirtualTable->getTableDef().schemaId->name;
-  int rc = sqlite3_exec(_db, format.c_str(), nullptr, nullptr, 0);
-  if (rc != SQLITE_OK) {
-    //TODO: "Error detaching table: " << name << " (" << rc << ")";
-  }
   for (auto it = _tables.begin(); it != _tables.end(); it++) {
     if ((*it)->getTableDef().schemaId == spVirtualTable->getTableDef().schemaId) {
       _tables.erase(it);
       break;
     }
   }
+
+  // drop table
+
+  auto format = "DROP TABLE IF EXISTS temp." + spVirtualTable->getTableDef().schemaId->name;
+  int rc = sqlite3_exec(_db, format.c_str(), nullptr, nullptr, 0);
+  if (rc != SQLITE_OK) {
+    //TODO: "Error detaching table: " << name << " (" << rc << ")";
+  }
+  
+  auto sql = "DROP VIRTUAL TABLE temp." + spVirtualTable->getTableDef().schemaId->name;
+  rc = sqlite3_exec(_db, sql.c_str(), nullptr, nullptr, 0);
+
 }
 
   static std::string columnTypeName(DynType t) {
