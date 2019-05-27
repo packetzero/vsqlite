@@ -157,6 +157,14 @@ namespace vsqlite {
 
       if (nullptr == spFunction) { return true; }
 
+      // already added?
+
+      for (auto &item : _funcs) {
+        if (item->name() == spFunction->name()) {
+          return false;
+        }
+      }
+
       int rv = sqlite3_create_function(_db,
                           spFunction->name().c_str(),
                           spFunction->expectedArgs().size(),

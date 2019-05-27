@@ -7,7 +7,7 @@
 namespace vsqlite {
 
   std::string createStatement(const TableDef &td);
-  
+
   /*
    * Information about a constraint is provided in xBestIndex,
    * but the constraint values are not provided until xFilter.
@@ -31,7 +31,7 @@ namespace vsqlite {
     std::set<SPFieldDef> getRequestedColumns() override {
       return _colsUsed;
     }
-    
+
     /*
      * Table implementations can set user data so they can
      * track state between prepare() and next() callbacks.
@@ -51,7 +51,7 @@ namespace vsqlite {
     std::shared_ptr<void> _userData;
   };
 
-  
+
 /*
  * state needed to track virtual table state.
  */
@@ -166,7 +166,7 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
   int numRequiredColumns = 0;
   int numIndexedColumns = 0;
   int xFilterArgvIndex = 0;
-  
+
   auto spContext = std::make_shared<QueryContextImpl>();
   spContext->_idxNum = kConstraintIndexID++;
 //  pVT->_colsUsed.clear();
@@ -339,7 +339,7 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
       pVT->_contexts.erase(it++);
       continue;
     }
-    
+
     if ((*it)->_idxNum == idxNum) {
       spContext = *it;
       break;
@@ -629,6 +629,18 @@ std::string createStatement(const TableDef &td) {
 // Add table
 //----------------------------------------------------------------
 int VSQLiteImpl::add(SPVirtualTable spVirtualTable) {
+  if (spVirtualTable == nullptr) {
+    return true;
+  }
+
+  // already added?
+
+  for (auto &item : _tables) {
+    if (item->getTableDef().schemaId->name == spVirtualTable->getTableDef().schemaId->name) {
+      return 0;
+    }
+  }
+
   auto &tableDef = spVirtualTable->getTableDef();
   auto tableName = tableDef.schemaId->name;
   int rc = sqlite3_create_module(

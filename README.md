@@ -46,6 +46,9 @@ struct Function_power : public vsqlite::AppFunctionBase {
 int status = vsqlite->add(std::make_shared<Function_power>());
 ```
 
+## Notes
+- It's not thread-safe, run the single instance from a single thread.
+
 ## Table Indexes
 If a table column is defined with `INDEX` , `REQUIRED`, or `ADDITIONAL` option, then sqlite will assume that your table implements the index for `OP_EQ`.  You can optionally specify additional operators such as `OP_LIKE`.  An index drastically changes the way a table's methods are called.  By specifying an OP_EQ index, you are telling sqlite that it's way faster for you to lookup a single row by value, than it is to return all rows and have sqlite do the filtering.  Accordingly, if a processes table has an index on the pid column, and the query looks like `SELECT * FROM processes WHERE pid in (4,6,2002,10,100,102)` then prepare() will be called 6 times, once per constraint value.  So your prepare implementation of the OP_EQ index should gather the data for that one value, the next() call will return that value.
 ```
