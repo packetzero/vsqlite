@@ -6,9 +6,8 @@
 namespace vsqlite {
   class VSQLiteImpl : public VSQLite {
   public:
-    VSQLiteImpl() {
-      sqlite3_open(":memory:", &_db);
-    }
+    VSQLiteImpl();
+
     virtual ~VSQLiteImpl() {
       if (_db) {
         sqlite3_close(_db);

@@ -10,7 +10,6 @@ namespace vsqlite {
       int rv = sqlite3_prepare_v2(_db, sql.c_str(), sql.size(), &pStmt, nullptr);
       if (rv != SQLITE_OK) {
         listener.onQueryError(sqlite3_errstr(rv));
-//        listener.onQueryError(sqlite3_errmsg(_db));
         return -1;
       }
 
@@ -73,6 +72,27 @@ namespace vsqlite {
        assert(false); // TODO
        break;
    }
+ }
+
+ // set some memory settings (these are from osquery 3.3.2)
+
+ const std::map<std::string, std::string> kMemoryDBSettings = {
+     {"synchronous", "OFF"},      {"count_changes", "OFF"},
+     {"default_temp_store", "0"}, {"auto_vacuum", "FULL"},
+     {"journal_mode", "OFF"},     {"cache_size", "0"},
+     {"page_count", "0"},
+ };
+
+ VSQLiteImpl::VSQLiteImpl() {
+   sqlite3_open(":memory:", &_db);
+
+   // enable some settings
+
+   std::string settings_sql;
+   for (const auto& setting : kMemoryDBSettings) {
+     settings_sql += "PRAGMA " + setting.first + "=" + setting.second + "; ";
+   }
+   sqlite3_exec(_db, settings_sql.c_str(), nullptr, nullptr, nullptr);
  }
 
  //----------------------------------------------------------------------
@@ -186,9 +206,9 @@ namespace vsqlite {
     // remove function
     //----------------------------------------------------------------------
     void VSQLiteImpl::remove(SPAppFunction spFunction) {
-      
+
       // remove from _funcs list
-      
+
       for (auto it = _funcs.begin(); it != _funcs.end(); it++) {
         if ((*it)->name() == spFunction->name()) {
           _funcs.erase(it);
