@@ -11,3 +11,4 @@ include_directories(../include )
 add_executable (${PROJECT_NAME} ${SRCS} ${HDRS})
 
 TARGET_LINK_LIBRARIES(${PROJECT_NAME} vsqlite )
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} pthread dl )

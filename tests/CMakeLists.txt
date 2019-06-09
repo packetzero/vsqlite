@@ -13,3 +13,4 @@ include_directories(.. ${GTEST_DIR}/include )
 add_executable (${PROJECT_NAME} ${SRCS} ${HDRS})
 
 TARGET_LINK_LIBRARIES(${PROJECT_NAME} vsqlite ${GTEST_DIR}/lib/libgtest.a )
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} pthread dl)

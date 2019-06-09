@@ -1,5 +1,6 @@
-
 #include "vsqlite_impl.h"
+#include <assert.h>
+#include <string.h>
 
 #define TRACE if (0)
 
