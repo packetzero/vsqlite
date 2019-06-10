@@ -258,7 +258,7 @@ namespace vsqlite {
         SPFieldDef column = columns[i];
         switch(column->typeId) {
           case TINT64:
-            row[column] = sqlite3_column_int64(pStmt, i);
+            row[column] = (int64_t)sqlite3_column_int64(pStmt, i);
             break;
           case TFLOAT64:
             row[column] = sqlite3_column_double(pStmt, i);
