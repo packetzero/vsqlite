@@ -3,9 +3,11 @@
 #include <assert.h>
 #include <set>
 
-#define TRACE if(0)
+#define TRACE if (VT_TRACE)
 
 namespace vsqlite {
+  
+  static bool VT_TRACE = false;
 
   std::string createStatement(const TableDef &td);
 
@@ -52,6 +54,20 @@ namespace vsqlite {
     std::shared_ptr<void> _userData;
   };
 
+  static int kConstraintIndexID = 1; // increments with each index used
+  static int gQueryStartIndex = 1;
+  
+  static std::string _TINDENT(int idxNum) {
+    std::string s = "";
+    for (int i=1 ; i < idxNum - gQueryStartIndex;i++) { s += "   "; }
+    return s;
+  }
+
+  static std::string _TINDENT(std::shared_ptr<QueryContextImpl> spContext) {
+    if (spContext == nullptr || spContext->_idxNum <= 0)
+      return "";
+    return _TINDENT(spContext->_idxNum);
+  }
 
 /*
  * state needed to track virtual table state.
@@ -160,7 +176,6 @@ static inline std::string opString(unsigned char op) {
 // indexes that the virtual table will handle.
 //----------------------------------------------------------------------
 static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
-  static int kConstraintIndexID = 1; // increments with each index used
   my_vtab* pVT = (my_vtab*)tab;
   int numRequiredConstraints = 0;
   int numIndexedConstraints = 0;
@@ -173,7 +188,9 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
 //  pVT->_colsUsed.clear();
 //  pVT->_constraints.clear();
 
-  TRACE fprintf(stderr, "xBestIndex nConstraint:%d idxNum:%d idxFlags:0x%x\n", pIdxInfo->nConstraint, spContext->_idxNum,
+  TRACE fprintf(stderr, "%sxBestIndex '%s' nConstraint:%d idxNum:%d idxFlags:0x%x\n",
+                _TINDENT(spContext).c_str(), pVT->_implementation->getTableDef().schemaId->name.c_str(),
+                pIdxInfo->nConstraint, spContext->_idxNum,
                 pIdxInfo->idxFlags);
 
   const TableDef & td = pVT->_implementation->getTableDef();
@@ -201,7 +218,12 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
         pcoldef = &td.columns[j];
       }
 
-      TRACE fprintf(stderr, "   icol:%d (%s) op:%s termOffset:%d\n", constraint_info.iColumn, pcoldef->id->name.c_str(), opString(constraint_info.op).c_str(), constraint_info.iTermOffset );
+      TRACE fprintf(stderr, "%s   icol:%d (%s) op:%s termOffset:%d\n", _TINDENT(spContext).c_str(), constraint_info.iColumn, pcoldef->id->name.c_str(), opString(constraint_info.op).c_str(), constraint_info.iTermOffset );
+
+      if ((pcoldef->options & (INDEXED | REQUIRED | ADDITIONAL)) == 0) {
+        TRACE fprintf(stderr, "%s   No such index implemented\n", _TINDENT(spContext).c_str());
+        continue;
+      }
 
       // does vtable support the constraint?
 
@@ -221,8 +243,10 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
       if (pcoldef->options & REQUIRED) {
         numRequiredConstraints ++;
       }
-      if (pcoldef->options & (INDEXED | ADDITIONAL)) {
-        numIndexedConstraints ++;
+      else {
+          if (pcoldef->options & (INDEXED | ADDITIONAL)) {
+            numIndexedConstraints ++;
+          }
       }
 
       // save constraint
@@ -272,16 +296,17 @@ static int xBestIndex(sqlite3_vtab* tab, sqlite3_index_info* pIdxInfo) {
     if (pVT->zErrMsg != nullptr) {
       sqlite3_free(pVT->zErrMsg);
     }
+    TRACE fprintf(stderr, "%sRequired constraint missing\n", _TINDENT(spContext).c_str());
     pVT->zErrMsg = sqlite3_mprintf("required constraint missing");
     return SQLITE_CONSTRAINT;
   }
 
   pIdxInfo->idxNum = static_cast<int>(spContext->_idxNum);//   kConstraintIndexID++);
   pVT->_contexts.push_back(spContext);
-
   if (xFilterArgvIndex > 0) {
     pIdxInfo->estimatedCost = 10000;
   }
+
   return SQLITE_OK;
 }
 
@@ -305,7 +330,7 @@ Constraint _makeConstraint(constraint_info_t &cinfo, sqlite3_value *val) {
 //----------------------------------------------------------------------
   static inline void advanceRow(my_vtab_cursor* pVC) {
   pVC->_row.clear();
-    TRACE fprintf(stderr, "calling next() idxNum:%d _rowId:%llu\n", pVC->_context->_idxNum, pVC->_pvt->_rowId);
+    TRACE fprintf(stderr, "%s call next() idxNum:%d _rowId:%llu\n", _TINDENT(pVC->_context).c_str(), pVC->_context->_idxNum, pVC->_pvt->_rowId);
     if (pVC->_pvt->_implementation->next(std::static_pointer_cast<QueryContext>(pVC->_context), pVC->_row) && !pVC->_row.empty()) {
     pVC->_pvt->_rowId++;
   }
@@ -324,8 +349,11 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
   auto pVC = (my_vtab_cursor*)psvCur;
   auto pVT = pVC->_pvt;
 
-  TRACE fprintf(stderr, "xFilter idxNum:%d argc:%d\n", idxNum, argc);
+  TRACE fprintf(stderr, "%sxFilter idxNum:%d argc:%d\n", _TINDENT(idxNum).c_str(), idxNum, argc);
   std::shared_ptr<QueryContextImpl> spContext;
+
+  // allow next xBestIndex to know what first index id is
+  gQueryStartIndex = kConstraintIndexID;
 
   // find matching context setup in xBestIndex
   // while we are at it, erase old contexts
@@ -368,7 +396,7 @@ static int xFilter(sqlite3_vtab_cursor* psvCur,
       // not good
     } else {
       for (int i=0; i < argc; i++) {
-        TRACE fprintf(stderr, "     argv[%d]='%s'\n", i, sqlite3_value_text(argv[i]));
+        TRACE fprintf(stderr, "%s    argv[%d]='%s'\n", _TINDENT(idxNum).c_str(), i, sqlite3_value_text(argv[i]));
         spContext->_constraints.push_back(_makeConstraint(spContext->_constraint_infos[i], argv[i]));
       }
     }
